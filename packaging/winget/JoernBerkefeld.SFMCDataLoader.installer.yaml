@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
 # Installer manifest. `wingetcreate update` (see the release workflow) rewrites
 # PackageVersion, InstallerUrl and InstallerSha256 for each new release, so the
 # placeholder hash below only matters for the very first manual submission.
@@ -17,4 +17,4 @@ Installers:
       InstallerUrl: https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v0.2.0/sfmc-dataloader-app-0.2.0-win-x64.exe
       InstallerSha256: 9F124AEC1AF0CD1830B64E820ED5C3B41A5192C3E77B2ED61CBAE2877972CD3D
 ManifestType: installer
-ManifestVersion: 1.6.0
+ManifestVersion: 1.12.0
