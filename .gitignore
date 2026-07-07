@@ -1,0 +1,10 @@
+node_modules
+dist
+out
+release
+*.tsbuildinfo
+coverage
+.DS_Store
+
+# stray local dev logs from `electron .` runs
+_electron_*.log

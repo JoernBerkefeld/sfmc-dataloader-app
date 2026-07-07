@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self';"
+        />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>SFMC Data Loader</title>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body>
+        <header class="app-header">
+            <h1>SFMC Data Loader</h1>
+            <span id="app-version" class="muted"></span>
+            <span class="spacer"></span>
+            <span class="project-indicator muted" id="project-label">No project folder selected</span>
+        </header>
+
+        <nav class="tabs" id="tabs">
+            <button class="tab active" data-view="connections">Connections</button>
+            <button class="tab" data-view="export">Export</button>
+            <button class="tab" data-view="import">Import</button>
+        </nav>
+
+        <main id="view" class="view"></main>
+
+        <!-- Load order matters: helpers first, then screens, then the router. -->
+        <!-- Shared, isomorphic helper (also required by main + tests) — attaches
+             window.McFileSize in the browser. -->
+        <script src="../shared/file-size.js"></script>
+        <script src="ui.js"></script>
+        <script src="state.js"></script>
+        <script src="forms.js"></script>
+        <script src="connection-data.js"></script>
+        <script src="bu-picker.js"></script>
+        <script src="de-selector.js"></script>
+        <script src="job-runner.js"></script>
+        <script src="screens/connections.js"></script>
+        <script src="screens/export.js"></script>
+        <script src="screens/import.js"></script>
+        <script src="renderer.js"></script>
+    </body>
+</html>

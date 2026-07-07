@@ -1,0 +1,59 @@
+{
+    "name": "sfmc-dataloader-app",
+    "version": "0.1.0",
+    "description": "Standalone cross-platform desktop app for SFMC Data Extension export/import (wraps sfmc-dataloader)",
+    "author": "Joern Berkefeld <joern.berkefeld@gmail.com>",
+    "license": "MIT",
+    "private": true,
+    "type": "commonjs",
+    "main": "src/main/main.js",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/JoernBerkefeld/sfmc-dataloader-app.git"
+    },
+    "bugs": {
+        "url": "https://github.com/JoernBerkefeld/sfmc-dataloader-app/issues"
+    },
+    "keywords": [
+        "sfmc",
+        "marketing-cloud",
+        "data-extension",
+        "electron",
+        "desktop",
+        "export",
+        "import"
+    ],
+    "engines": {
+        "node": "^20.19.0 || ^22.13.0 || >=24"
+    },
+    "scripts": {
+        "start": "electron .",
+        "dev": "electron .",
+        "lint": "eslint .",
+        "lint:fix": "eslint --fix .",
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
+        "test": "node --test test/*.test.js",
+        "dist": "electron-builder --publish never",
+        "dist:win": "electron-builder --win --publish never",
+        "dist:mac": "electron-builder --mac --publish never",
+        "dist:linux": "electron-builder --linux --publish never",
+        "prepare": "husky || true"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "electron": "^43.0.0",
+        "electron-builder": "^26.15.3",
+        "eslint": "^10.6.0",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-jsdoc": "^63.0.12",
+        "eslint-plugin-prettier": "^5.5.6",
+        "eslint-plugin-unicorn": "^71.0.0",
+        "globals": "^17.7.0",
+        "husky": "^9.1.7",
+        "prettier": "^3.9.4"
+    },
+    "dependencies": {
+        "sfmc-dataloader": "^2.7.0"
+    }
+}
