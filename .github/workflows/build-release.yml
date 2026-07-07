@@ -1,0 +1,51 @@
+name: Build & Publish Installers on Release
+
+on:
+    release:
+        types: [published]
+
+# electron-builder uploads artifacts to the GitHub Release, which needs write
+# access to the repository's releases.
+permissions:
+    contents: write
+
+jobs:
+    build:
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - os: windows-latest
+                      platform: win
+                    - os: macos-latest
+                      platform: mac
+                    - os: ubuntu-latest
+                      platform: linux
+        runs-on: ${{ matrix.os }}
+        name: build ${{ matrix.platform }} installers
+        steps:
+            - uses: actions/checkout@v6
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: '24'
+
+            - run: npm ci --no-workspaces
+            - run: npm run lint
+            - run: npm test
+
+            # Build the native installers for this runner's OS and upload them to
+            # the release that triggered the workflow. `--publish always` uses the
+            # `publish:` block in electron-builder.yml (GitHub provider).
+            - name: Build & publish (${{ matrix.platform }})
+              run: npx electron-builder --${{ matrix.platform }} --publish always
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  # macOS code signing + notarization. All optional: when the
+                  # secrets are absent electron-builder produces an unsigned build
+                  # instead of failing, so the workflow still works before signing
+                  # certificates are configured.
+                  CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+                  CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+                  APPLE_ID: ${{ secrets.APPLE_ID }}
+                  APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+                  APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

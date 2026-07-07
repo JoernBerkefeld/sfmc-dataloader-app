@@ -1,0 +1,60 @@
+appId: com.joernberkefeld.sfmc-dataloader-app
+productName: SFMC Data Loader
+copyright: Copyright © Joern Berkefeld
+
+directories:
+    output: release
+    buildResources: build
+
+# Ship only what the app needs. sfmc-dataloader + its runtime deps are included
+# via node_modules; optional `mcdev` is excluded through .npmrc (omit=optional).
+files:
+    - src/**/*
+    - package.json
+    - '!**/*.map'
+
+# asar keeps startup fast; native/unpacked modules are added here if ever needed.
+asar: true
+
+npmRebuild: false
+
+win:
+    target:
+        - target: nsis
+          arch:
+              - x64
+    artifactName: ${productName}-${version}-win-${arch}.${ext}
+
+nsis:
+    oneClick: false
+    perMachine: false
+    allowToChangeInstallationDirectory: true
+    deleteAppDataOnUninstall: false
+
+mac:
+    category: public.app-category.developer-tools
+    hardenedRuntime: true
+    gatekeeperAssess: false
+    entitlements: build/entitlements.mac.plist
+    entitlementsInherit: build/entitlements.mac.plist
+    target:
+        - target: dmg
+          arch:
+              - x64
+              - arm64
+    artifactName: ${productName}-${version}-mac-${arch}.${ext}
+
+linux:
+    category: Development
+    target:
+        - AppImage
+        - deb
+    artifactName: ${productName}-${version}-linux-${arch}.${ext}
+
+# Uploads built installers to the matching GitHub Release when electron-builder
+# is invoked with `--publish always` (see .github/workflows/build-release.yml).
+# Local `npm run dist` uses `--publish never`, so nothing is uploaded by accident.
+publish:
+    provider: github
+    owner: JoernBerkefeld
+    repo: sfmc-dataloader-app
