@@ -40,8 +40,8 @@
     }
 
     class JobRunner {
-        /** @type {string | null} */
-        #jobId = null;
+        /** @type {string | undefined} */
+        #jobId = undefined;
         /** @type {() => void[]} */
         #unsubscribers = [];
         /** @type {HTMLElement} */
@@ -241,7 +241,7 @@
             const outcome = new Promise((resolve) => {
                 this.#subscribe((result) => {
                     this.#teardown();
-                    this.#jobId = null;
+                    this.#jobId = undefined;
                     this.#cancelButton.setAttribute('disabled', 'true');
                     resolve(result);
                 });
@@ -254,7 +254,7 @@
                 this.#cancelButton.removeAttribute('disabled');
             } catch (ex) {
                 this.#teardown();
-                this.#jobId = null;
+                this.#jobId = undefined;
                 return { ok: false, error: ex && ex.message ? ex.message : String(ex) };
             }
 

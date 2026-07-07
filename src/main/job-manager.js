@@ -133,7 +133,7 @@ class JobManager {
         }
         this._jobs.delete(jobId);
         child.kill();
-        this.#emit(CHANNELS.JOB_COMPLETE, { jobId, exitCode: null, cancelled: true });
+        this.#emit(CHANNELS.JOB_COMPLETE, { jobId, exitCode: undefined, cancelled: true });
         return true;
     }
 

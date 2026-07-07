@@ -55,26 +55,7 @@ export default [
         },
         rules: {
             'logical-assignment-operators': ['error', 'always'],
-            'unicorn/better-regex': 'off',
             'unicorn/catch-error-name': ['error', { name: 'ex' }],
-            'unicorn/explicit-length-check': 'off',
-            'unicorn/filename-case': 'off',
-            'unicorn/no-array-callback-reference': 'off',
-            'unicorn/no-array-reduce': 'off',
-            'unicorn/no-await-expression-member': 'off',
-            'unicorn/no-empty-file': 'off',
-            'unicorn/no-hex-escape': 'off',
-            'unicorn/no-nested-ternary': 'off',
-            'unicorn/no-null': 'off',
-            'unicorn/no-static-only-class': 'off',
-            'unicorn/no-unused-properties': 'warn',
-            'unicorn/numeric-separators-style': 'off',
-            'unicorn/prefer-array-some': 'off',
-            'unicorn/prefer-module': 'off',
-            'unicorn/prefer-set-has': 'off',
-            'unicorn/prefer-spread': 'off',
-            'unicorn/prefer-string-replace-all': 'error',
-            'unicorn/prevent-abbreviations': 'off',
             'no-unused-vars': ['error', { varsIgnorePattern: '^_', argsIgnorePattern: '^_' }],
             'arrow-body-style': ['error', 'as-needed'],
             curly: 'error',
@@ -117,6 +98,8 @@ export default [
         rules: {
             // CommonJS entry points cannot use top-level await.
             'unicorn/prefer-top-level-await': 'off',
+            // These files run as CommonJS (package.json "type": "commonjs"); require/module are intentional.
+            'unicorn/prefer-module': 'off',
         },
     },
     {
@@ -128,6 +111,8 @@ export default [
         },
         rules: {
             'unicorn/prefer-top-level-await': 'off',
+            // Sandboxed classic browser scripts — no ESM module system available.
+            'unicorn/prefer-module': 'off',
         },
     },
 ];
