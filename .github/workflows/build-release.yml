@@ -17,10 +17,17 @@ jobs:
                 include:
                     - os: windows-latest
                       platform: win
+                      # Windows: NSIS installer (self-updating via electron-updater).
+                      buildArgs: --win
                     - os: macos-latest
                       platform: mac
+                      # macOS: dmg (self-updating via electron-updater).
+                      buildArgs: --mac
                     - os: ubuntu-latest
                       platform: linux
+                      # Linux: AppImage self-updates; deb/rpm are package-manager
+                      # managed. snap is built in a separate, non-fatal step below.
+                      buildArgs: --linux AppImage deb rpm
         runs-on: ${{ matrix.os }}
         name: build ${{ matrix.platform }} installers
         steps:
@@ -33,11 +40,16 @@ jobs:
             - run: npm run lint
             - run: npm test
 
+            # rpm target needs rpmbuild on the runner (not installed by default).
+            - name: Install rpm tooling (Linux)
+              if: matrix.platform == 'linux'
+              run: sudo apt-get update && sudo apt-get install -y rpm
+
             # Build the native installers for this runner's OS and upload them to
             # the release that triggered the workflow. `--publish always` uses the
             # `publish:` block in electron-builder.yml (GitHub provider).
             - name: Build & publish (${{ matrix.platform }})
-              run: npx electron-builder --${{ matrix.platform }} --publish always
+              run: npx electron-builder ${{ matrix.buildArgs }} --publish always
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   # macOS code signing + notarization. All optional: only attempt
@@ -51,3 +63,22 @@ jobs:
                   APPLE_ID: ${{ secrets.APPLE_ID }}
                   APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
                   APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+            # snap requires snapcraft, which can be flaky on hosted runners, so it
+            # runs last and is non-fatal: AppImage/deb/rpm are already published
+            # above, so a snap failure never blocks a release. The .snap is
+            # uploaded to the GitHub Release (snap.publish in electron-builder.yml).
+            # Set SNAPCRAFT_STORE_CREDENTIALS as a secret to also push to the Snap
+            # Store instead of only attaching the artifact.
+            - name: Install snapcraft (Linux)
+              if: matrix.platform == 'linux'
+              continue-on-error: true
+              run: sudo snap install snapcraft --classic
+
+            - name: Build & publish snap (Linux)
+              if: matrix.platform == 'linux'
+              continue-on-error: true
+              run: npx electron-builder --linux snap --publish always
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}

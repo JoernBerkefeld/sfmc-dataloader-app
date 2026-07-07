@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { CHANNELS } = require('../shared/channels');
 const { JobManager } = require('./job-manager');
+const { UpdaterService } = require('./updater');
 const configService = require('./config-service');
 
 /**
@@ -28,9 +29,13 @@ async function toSizedFile(filePath) {
  * Mutable app state. Held on a const object so helper functions can update the
  * current window reference without reassigning a top-level binding.
  *
- * @type {{ mainWindow: BrowserWindow | undefined, jobManager: JobManager | undefined }}
+ * @type {{
+ *   mainWindow: BrowserWindow | undefined,
+ *   jobManager: JobManager | undefined,
+ *   updater: UpdaterService | undefined,
+ * }}
  */
-const state = { mainWindow: undefined, jobManager: undefined };
+const state = { mainWindow: undefined, jobManager: undefined, updater: undefined };
 
 const isDevelopment = !app.isPackaged;
 
@@ -138,6 +143,9 @@ function registerIpcHandlers() {
 
     ipcMain.handle(CHANNELS.JOB_START, (_event, job) => state.jobManager.start(job));
     ipcMain.handle(CHANNELS.JOB_CANCEL, (_event, jobId) => state.jobManager.cancel(jobId));
+
+    ipcMain.handle(CHANNELS.UPDATE_CHECK, () => state.updater?.checkForUpdates());
+    ipcMain.handle(CHANNELS.UPDATE_INSTALL, () => state.updater?.quitAndInstall() ?? false);
 }
 
 /**
@@ -147,11 +155,17 @@ function registerIpcHandlers() {
  */
 async function bootstrap() {
     await app.whenReady();
-    state.jobManager = new JobManager(() =>
-        state.mainWindow ? state.mainWindow.webContents : undefined,
-    );
+    const getWebContents = () => (state.mainWindow ? state.mainWindow.webContents : undefined);
+    state.jobManager = new JobManager(getWebContents);
+    state.updater = new UpdaterService(getWebContents, { isPackaged: app.isPackaged });
     registerIpcHandlers();
     createWindow();
+
+    // Check for updates shortly after launch so the check never delays the
+    // first paint. No-ops automatically in a dev/unpackaged build.
+    setTimeout(() => {
+        state.updater?.checkForUpdates();
+    }, 3000);
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {

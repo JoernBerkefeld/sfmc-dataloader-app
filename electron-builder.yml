@@ -23,7 +23,10 @@ win:
         - target: nsis
           arch:
               - x64
-    artifactName: ${productName}-${version}-win-${arch}.${ext}
+    # Use the package slug (no spaces) so download URLs are predictable for
+    # winget/Scoop. GitHub rewrites spaces in asset names to dots, which would
+    # make ${productName}-based URLs fragile.
+    artifactName: ${name}-${version}-win-${arch}.${ext}
 
 nsis:
     oneClick: false
@@ -46,14 +49,30 @@ mac:
           arch:
               - x64
               - arm64
-    artifactName: ${productName}-${version}-mac-${arch}.${ext}
+    artifactName: ${name}-${version}-mac-${arch}.${ext}
 
 linux:
     category: Development
+    # AppImage self-updates via electron-updater; deb/rpm/snap are handled by the
+    # user's package manager / the Snap Store. rpm needs `rpm` (rpmbuild) and snap
+    # needs snapcraft on the build runner — both installed in the release workflow.
     target:
         - AppImage
         - deb
-    artifactName: ${productName}-${version}-linux-${arch}.${ext}
+        - rpm
+        - snap
+    artifactName: ${name}-${version}-linux-${arch}.${ext}
+
+# By default electron-builder publishes snaps straight to the Snap Store, which
+# needs store credentials and would fail the release. Pin the snap publish
+# target to GitHub so the .snap is just uploaded as a release asset like the
+# other Linux artifacts. Store publishing is handled separately (see the
+# optional snapcraft step in .github/workflows/build-release.yml).
+snap:
+    publish:
+        provider: github
+        owner: JoernBerkefeld
+        repo: sfmc-dataloader-app
 
 # Uploads built installers to the matching GitHub Release when electron-builder
 # is invoked with `--publish always` (see .github/workflows/build-release.yml).
