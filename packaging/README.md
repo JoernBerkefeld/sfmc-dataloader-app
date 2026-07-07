@@ -78,16 +78,41 @@ makepkg --printsrcinfo > .SRCINFO
 git commit -am "upgpkg: <version>" && git push
 ```
 
+## Automated manifest refresh
+
+The in-repo manifests below are kept in sync automatically. After the release
+workflow finishes building and uploading every installer, its
+`update-manifests` job runs
+[`scripts/update-packaging-manifests.mjs`](../scripts/update-packaging-manifests.mjs),
+which downloads the new release assets, computes their SHA256, rewrites the
+`version` / `url` / `sha256` fields in the Scoop, Flatpak, AUR and winget
+manifests, and commits the result back to `main`.
+
+Run it manually against any published release with:
+
+```bash
+npm run update-manifests -- --version 1.2.3
+# or: VERSION=1.2.3 node scripts/update-packaging-manifests.mjs
+```
+
+The script is idempotent — it only rewrites files whose content actually
+changed.
+
 ## Per-release maintenance checklist
 
-After a new `vX.Y.Z` release is published:
+Refreshing the in-repo seeds is automatic (see above). What still has to reach
+each channel's **own** registry/repo:
 
-1. **Scoop** — bump `version` + `hash` (or rely on `scoop update` autoupdate).
-2. **winget** — automatic via `winget-publish.yml` (or run `wingetcreate update`
-   locally); otherwise bump `PackageVersion` + `InstallerSha256` in all three
-   YAML files.
-3. **Flatpak** — bump the `.deb` `url` + `sha256` (or let the Flathub bot do it).
-4. **AUR** — bump `pkgver`, run `updpkgsums`, regenerate `.SRCINFO`, push.
+1. **Scoop** — the bucket repo (`JoernBerkefeld/scoop-bucket`) tracks new
+   releases via `checkver` + `autoupdate`, so `scoop update` picks them up; the
+   in-repo copy here is just the seed.
+2. **winget** — automatic via `winget-publish.yml` (wingetcreate opens the PR
+   against `microsoft/winget-pkgs`); the local YAMLs are only a seed.
+3. **Flatpak** — once the app is on Flathub, the `x-checker-data` bot bumps the
+   `.deb` `url` + `sha256` on the Flathub repo automatically.
+4. **AUR** — **no bot**: after the seed is refreshed, push `PKGBUILD` +
+   regenerated `.SRCINFO` to the AUR repo (`updpkgsums` is unnecessary because
+   the script already fills in the real `sha256sums`).
 
 Nothing here blocks the core release: the GitHub Release + in-app auto-update
 work on their own, and each package-manager channel is best-effort on top.

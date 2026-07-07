@@ -21,7 +21,8 @@
         "electron",
         "desktop",
         "export",
-        "import"
+        "import",
+        "salesforce"
     ],
     "engines": {
         "node": "^22.13.0 || >=24"
@@ -38,6 +39,7 @@
         "dist:win": "electron-builder --win --publish never",
         "dist:mac": "electron-builder --mac --publish never",
         "dist:linux": "electron-builder --linux --publish never",
+        "update-manifests": "node scripts/update-packaging-manifests.mjs",
         "prepare": "husky || true"
     },
     "devDependencies": {
