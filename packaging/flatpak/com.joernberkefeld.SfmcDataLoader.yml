@@ -52,14 +52,17 @@ modules:
             path: launcher.sh
             dest: packaging
           - type: file
-            # Replace url/sha256 for each release (or wire up x-checker-data).
-            url: https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v0.1.1/sfmc-dataloader-app-0.1.1-linux-x64.deb
-            sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+            # Maintained automatically by scripts/update-packaging-manifests.mjs on
+            # each release. electron-builder names the Debian package with the
+            # dpkg arch (amd64), not x64 — the url and x-checker query below must
+            # match that.
+            url: https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v0.2.0/sfmc-dataloader-app-0.2.0-linux-amd64.deb
+            sha256: 'fd8547aafa3330657f6d7c159453f5005056527d4c496e8f593d3b500ceaf014'
             dest-filename: sfmc-dataloader-app.deb
             x-checker-data:
                 type: json
                 url: https://api.github.com/repos/JoernBerkefeld/sfmc-dataloader-app/releases/latest
                 version-query: .tag_name | sub("^v"; "")
                 url-query: >-
-                    .assets[] | select(.name | test("linux-x64\\.deb$")) |
+                    .assets[] | select(.name | test("linux-amd64\\.deb$")) |
                     .browser_download_url

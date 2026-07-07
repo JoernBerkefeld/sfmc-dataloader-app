@@ -82,3 +82,41 @@ jobs:
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+
+    # After every installer has been uploaded to the release, refresh the
+    # in-repo package-manager seeds (Scoop / Flatpak / AUR / winget) so their
+    # version + url + sha256 match the new artifacts, and commit them back to the
+    # default branch. This job checks out `main` (not the detached release tag)
+    # so the commit lands on the branch, and only pushes when something changed.
+    update-manifests:
+        needs: build
+        runs-on: ubuntu-latest
+        name: update packaging manifests
+        # Only stable releases seed the manifests; skip pre-releases.
+        if: ${{ !github.event.release.prerelease }}
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  ref: main
+                  persist-credentials: true
+
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: '24'
+
+            # Recompute every manifest's version/url/sha256 from the release assets
+            # produced by the build job above.
+            - name: Refresh packaging manifests
+              run: node scripts/update-packaging-manifests.mjs --version "${{ github.event.release.tag_name }}"
+
+            - name: Commit refreshed manifests
+              run: |
+                  if git diff --quiet -- packaging; then
+                      echo 'Packaging manifests already up to date — nothing to commit.'
+                      exit 0
+                  fi
+                  git config user.name 'github-actions[bot]'
+                  git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+                  git add packaging
+                  git commit -m "chore: refresh packaging manifests for ${{ github.event.release.tag_name }}"
+                  git push origin main
