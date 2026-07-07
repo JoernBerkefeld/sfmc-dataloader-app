@@ -34,14 +34,36 @@ The app window itself is locked down (sandboxed with a strict security policy) a
 ## Getting started
 
 1. **Download** the installer for your operating system from the [latest release](https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/latest):
-   - **Windows** — `SFMC Data Loader-<version>-win-x64.exe`
-   - **macOS** — `SFMC Data Loader-<version>-mac-arm64.dmg` (Apple Silicon) or `-mac-x64.dmg` (Intel)
-   - **Linux** — `SFMC Data Loader-<version>-linux-x64.AppImage` or `.deb`
+   - **Windows** — `sfmc-dataloader-app-<version>-win-x64.exe`
+   - **macOS** — `sfmc-dataloader-app-<version>-mac-arm64.dmg` (Apple Silicon) or `-mac-x64.dmg` (Intel)
+   - **Linux** — `sfmc-dataloader-app-<version>-linux-x64.AppImage`, `.deb`, `.rpm`, or `.snap`
 2. **Install and open** the app.
 3. Go to **Connections**, enter your Marketing Cloud API credentials, and let the app list your Business Units.
 4. Switch to **Export** or **Import** and go.
 
 > **Note on macOS:** until code-signing certificates are configured, macOS builds are **unsigned**. You may need to right-click the app and choose *Open* the first time to get past Gatekeeper.
+
+### Or install with a package manager
+
+If you'd rather use a package manager, these all install the same app:
+
+| Platform | Command |
+| --- | --- |
+| **Windows** (winget) | `winget install JoernBerkefeld.SFMCDataLoader` |
+| **Windows** (Scoop) | `scoop bucket add joern https://github.com/JoernBerkefeld/scoop-bucket` then `scoop install sfmc-dataloader-app` |
+| **Linux** (Flatpak) | `flatpak install flathub com.joernberkefeld.SfmcDataLoader` |
+| **Arch Linux** (AUR) | `yay -S sfmc-dataloader-app-bin` |
+
+> Package-manager availability rolls out per release; if a channel isn't published yet, use the direct download above. See [`packaging/README.md`](packaging/README.md) for the current status and maintenance details.
+
+### Staying up to date
+
+On **Windows**, **macOS**, and the Linux **AppImage**, the app updates itself: a
+few seconds after launch it checks for a newer release, downloads it in the
+background, and shows a banner offering to **restart & install**. Updates never
+interrupt a running export or import. Installs via **deb/rpm/snap**, **Flatpak**,
+or your package manager are updated the usual way (`apt`, `dnf`, `snap`,
+`flatpak update`, `winget upgrade`, `scoop update`, …).
 
 ---
 
@@ -55,11 +77,11 @@ This is an **Electron** app that wraps the [`sfmc-dataloader`](https://www.npmjs
 
 | Layer | Location | Responsibility |
 | --- | --- | --- |
-| Main process | `src/main/` | Window lifecycle, dialogs, IPC handlers, spawns the job worker |
+| Main process | `src/main/` | Window lifecycle, dialogs, IPC handlers, spawns the job worker, drives auto-update (`updater.js`) |
 | Preload bridge | `src/preload/` | Allow-listed `window.mcdata` API (contextIsolation, sandbox) |
 | Renderer | `src/renderer/` | UI only; no Node access, talks to the bridge |
 | Job worker | `src/worker/` | Isolated Node process; thin `parentPort` wiring around the shared job runner that drives `sfmc-dataloader` for export/import |
-| Shared | `src/shared/` | Isomorphic helpers reused by main, worker, renderer and tests: IPC channel + job-kind constants, argv builder, progress parser, file-size helpers, and the injectable job runner (streams logs/progress, reports complete/error) |
+| Shared | `src/shared/` | Isomorphic helpers reused by main, worker, renderer and tests: IPC channel + job-kind constants, argv builder, progress parser, file-size helpers, update-status state machine, and the injectable job runner (streams logs/progress, reports complete/error) |
 
 The renderer is fully sandboxed (`contextIsolation: true`, `nodeIntegration: false`,
 `sandbox: true`) with a strict Content-Security-Policy. All privileged work happens in the main
@@ -84,11 +106,17 @@ never upload anything (`--publish never`):
 ```bash
 npm run dist:win     # NSIS installer (Windows)
 npm run dist:mac     # dmg, x64 + arm64 (macOS)
-npm run dist:linux   # AppImage + deb
+npm run dist:linux   # AppImage + deb + rpm + snap
 npm run dist         # all targets for the current OS
 ```
 
-Output lands in `release/`.
+Output lands in `release/`. Package-manager manifests (Scoop, winget, Flatpak,
+AUR) live under [`packaging/`](packaging/README.md) — all fed from the same
+GitHub Release artifacts.
+
+> **Auto-update:** in-app updates are handled by `electron-updater` and only work
+> in a packaged, released build (self-updating for Windows NSIS, macOS dmg, and
+> Linux AppImage). In development (`npm start`) the update check is skipped.
 
 > **Icon:** no custom app icon is configured yet, so builds use the default Electron icon. Add
 > `build/icon.ico` (Windows), `build/icon.icns` (macOS), and `build/icon.png` (Linux, 512×512+) —
@@ -101,14 +129,23 @@ triggers a three-OS matrix (`windows-latest`, `macos-latest`, `ubuntu-latest`); 
 tests, builds its native installers, and uploads them to that release via electron-builder's GitHub
 publish provider (`--publish always`).
 
-Each release ends up with **five installers** plus electron-builder's auto-update metadata
-(`latest*.yml` and `.blockmap` files):
+Each release ends up with **seven installers** plus electron-builder's auto-update metadata
+(`latest*.yml` and `.blockmap` files). The Linux `rpm` build installs `rpm`/rpmbuild on the
+runner; the `snap` build runs in a separate, non-fatal step (a snap failure never blocks the
+release):
 
 | Platform | Assets |
 | --- | --- |
 | Windows | `...-win-x64.exe` |
 | macOS | `...-mac-x64.dmg`, `...-mac-arm64.dmg` |
-| Linux | `...-linux-x64.AppImage`, `...-linux-x64.deb` |
+| Linux | `...-linux-x64.AppImage`, `...-linux-x64.deb`, `...-linux-x64.rpm`, `...-linux-x64.snap` |
+
+Two optional, credential-gated add-ons run alongside the release and never block it:
+
+| Workflow / secret | Effect when configured |
+| --- | --- |
+| `winget-publish.yml` + `WINGET_TOKEN` | Auto-submits each release to `microsoft/winget-pkgs` via `wingetcreate` |
+| `SNAPCRAFT_STORE_CREDENTIALS` secret | `snap` build also pushes to the Snap Store (otherwise the `.snap` is only attached to the release) |
 
 macOS code signing and notarization are optional and driven by repository secrets — when they are
 absent the workflow still succeeds and produces an **unsigned** macOS build:

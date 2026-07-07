@@ -1,0 +1,31 @@
+{
+    "version": "0.1.1",
+    "description": "Standalone cross-platform desktop app for SFMC Data Extension export/import (wraps sfmc-dataloader)",
+    "homepage": "https://github.com/JoernBerkefeld/sfmc-dataloader-app",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v0.1.1/sfmc-dataloader-app-0.1.1-win-x64.exe#/dl.7z",
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+    },
+    "pre_install": [
+        "# electron-builder NSIS installers nest the real app inside",
+        "# `$PLUGINSDIR\\app-64.7z`. The outer `#/dl.7z` extracted the installer;",
+        "# now extract the inner archive to get the runnable app, then clean up.",
+        "Expand-7zipArchive \"$dir\\`$PLUGINSDIR\\app-64.7z\" \"$dir\"",
+        "Remove-Item \"$dir\\`$PLUGINSDIR\", \"$dir\\`$*\", \"$dir\\dl.7z\" -Recurse -Force -ErrorAction SilentlyContinue"
+    ],
+    "bin": "SFMC Data Loader.exe",
+    "shortcuts": [["SFMC Data Loader.exe", "SFMC Data Loader"]],
+    "checkver": {
+        "github": "https://github.com/JoernBerkefeld/sfmc-dataloader-app"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v$version/sfmc-dataloader-app-$version-win-x64.exe#/dl.7z"
+            }
+        }
+    }
+}

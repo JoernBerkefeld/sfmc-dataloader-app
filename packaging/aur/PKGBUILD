@@ -1,0 +1,43 @@
+# Maintainer: Joern Berkefeld <joern.berkefeld@gmail.com>
+# AUR binary package: repackages the official AppImage release. Bump `pkgver`
+# and refresh the sha256 (`updpkgsums`) for each new upstream release, then
+# regenerate .SRCINFO with `makepkg --printsrcinfo > .SRCINFO`.
+pkgname=sfmc-dataloader-app-bin
+_appname=sfmc-data-loader
+pkgver=0.1.1
+pkgrel=1
+pkgdesc="Standalone cross-platform desktop app for SFMC Data Extension export/import (wraps sfmc-dataloader)"
+arch=('x86_64')
+url="https://github.com/JoernBerkefeld/sfmc-dataloader-app"
+license=('MIT')
+depends=('gtk3' 'nss' 'alsa-lib')
+options=('!strip')
+source=("sfmc-dataloader-app-${pkgver}.AppImage::https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v${pkgver}/sfmc-dataloader-app-${pkgver}-linux-x86_64.AppImage")
+sha256sums=('SKIP')
+
+prepare() {
+    chmod +x "sfmc-dataloader-app-${pkgver}.AppImage"
+    # Extract the AppImage into squashfs-root/ without needing FUSE.
+    "./sfmc-dataloader-app-${pkgver}.AppImage" --appimage-extract >/dev/null
+}
+
+package() {
+    # Install the extracted app under /opt and expose it on PATH.
+    install -d "${pkgdir}/opt/${pkgname}"
+    cp -a squashfs-root/. "${pkgdir}/opt/${pkgname}/"
+
+    install -d "${pkgdir}/usr/bin"
+    ln -s "/opt/${pkgname}/AppRun" "${pkgdir}/usr/bin/${_appname}"
+
+    # Desktop entry + icon from the extracted AppImage, if present.
+    if [ -f "squashfs-root/${_appname}.desktop" ]; then
+        install -Dm644 "squashfs-root/${_appname}.desktop" \
+            "${pkgdir}/usr/share/applications/${_appname}.desktop"
+    fi
+    for icon in squashfs-root/usr/share/icons/hicolor/*/apps/*.png; do
+        [ -f "$icon" ] || continue
+        size="$(printf '%s' "$icon" | sed -E 's#.*/hicolor/([0-9x]+)/.*#\1#')"
+        install -Dm644 "$icon" \
+            "${pkgdir}/usr/share/icons/hicolor/${size}/apps/${_appname}.png"
+    done
+}

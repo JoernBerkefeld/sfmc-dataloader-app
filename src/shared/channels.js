@@ -22,11 +22,17 @@ const CHANNELS = {
     JOB_START: 'job:start',
     JOB_CANCEL: 'job:cancel',
 
+    // Auto-update (electron-updater). CHECK/INSTALL are invoke/handle; the
+    // updater pushes lifecycle changes back over the UPDATE_STATUS event.
+    UPDATE_CHECK: 'update:check',
+    UPDATE_INSTALL: 'update:install',
+
     // main -> renderer (send/on, one-way events)
     JOB_PROGRESS: 'job:progress',
     JOB_LOG: 'job:log',
     JOB_COMPLETE: 'job:complete',
     JOB_ERROR: 'job:error',
+    UPDATE_STATUS: 'update:status',
 };
 
 /**

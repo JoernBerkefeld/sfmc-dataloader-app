@@ -1,0 +1,34 @@
+name: Submit to winget
+
+# Opens/updates a pull request in microsoft/winget-pkgs for each published
+# release using wingetcreate. Optional: it only runs when a WINGET_TOKEN secret
+# (a classic PAT with `public_repo` that can fork winget-pkgs) is configured, so
+# the release itself never depends on winget.
+on:
+    release:
+        types: [published]
+
+jobs:
+    winget:
+        runs-on: windows-latest
+        # Skip pre-releases and skip entirely when no token is configured.
+        if: ${{ !github.event.release.prerelease }}
+        steps:
+            - name: Submit new version to winget-pkgs
+              env:
+                  WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+              run: |
+                  if (-not $env:WINGET_TOKEN) {
+                      Write-Host 'WINGET_TOKEN not set — skipping winget submission.'
+                      exit 0
+                  }
+                  $version = '${{ github.event.release.tag_name }}'.TrimStart('v')
+                  $installerUrl = "https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/${{ github.event.release.tag_name }}/sfmc-dataloader-app-$version-win-x64.exe"
+                  # wingetcreate downloads the installer, computes the SHA256 and
+                  # opens a PR against microsoft/winget-pkgs from the existing manifest.
+                  Invoke-WebRequest -Uri 'https://aka.ms/wingetcreate/latest' -OutFile wingetcreate.exe
+                  .\wingetcreate.exe update JoernBerkefeld.SFMCDataLoader `
+                      --version $version `
+                      --urls $installerUrl `
+                      --submit `
+                      --token $env:WINGET_TOKEN

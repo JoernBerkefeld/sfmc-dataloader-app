@@ -78,6 +78,39 @@ body {
     flex: 1;
 }
 
+.update-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+}
+
+.update-banner[hidden] {
+    display: none;
+}
+
+.update-text {
+    flex: 1;
+}
+
+.btn-icon {
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    opacity: 0.85;
+}
+
+.btn-icon:hover {
+    opacity: 1;
+}
+
 .project-indicator {
     max-width: 50%;
     overflow: hidden;

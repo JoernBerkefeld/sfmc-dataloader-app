@@ -55,6 +55,7 @@
         "prettier": "^3.9.4"
     },
     "dependencies": {
+        "electron-updater": "^6.8.9",
         "sfmc-dataloader": "^2.7.0"
     },
     "lint-staged": {

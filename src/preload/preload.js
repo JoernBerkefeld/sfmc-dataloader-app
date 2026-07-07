@@ -19,10 +19,14 @@ const CHANNELS = {
     JOB_START: 'job:start',
     JOB_CANCEL: 'job:cancel',
 
+    UPDATE_CHECK: 'update:check',
+    UPDATE_INSTALL: 'update:install',
+
     JOB_PROGRESS: 'job:progress',
     JOB_LOG: 'job:log',
     JOB_COMPLETE: 'job:complete',
     JOB_ERROR: 'job:error',
+    UPDATE_STATUS: 'update:status',
 };
 
 // Inlined for the same sandbox reason as CHANNELS above. Canonical source is
@@ -111,6 +115,26 @@ const api = {
      * @returns {() => void} unsubscribe
      */
     onJobError: (handler) => subscribe(CHANNELS.JOB_ERROR, handler),
+
+    // --- auto-update (electron-updater) --------------------------------------
+    /**
+     * Asks the main process to check for updates now. Downloads happen
+     * automatically; progress arrives via {@link onUpdateStatus}.
+     *
+     * @returns {Promise.<void>}
+     */
+    checkForUpdates: () => ipcRenderer.invoke(CHANNELS.UPDATE_CHECK),
+    /**
+     * Requests quit-and-install of an already-downloaded update.
+     *
+     * @returns {Promise.<boolean>} true if an install/restart was initiated
+     */
+    installUpdate: () => ipcRenderer.invoke(CHANNELS.UPDATE_INSTALL),
+    /**
+     * @param {(state: object) => void} handler
+     * @returns {() => void} unsubscribe
+     */
+    onUpdateStatus: (handler) => subscribe(CHANNELS.UPDATE_STATUS, handler),
 };
 
 /**

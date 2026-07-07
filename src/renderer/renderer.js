@@ -77,6 +77,7 @@
         initTabs();
         initProjectLabel();
         showRuntimeInfo();
+        globalObject.McUpdates.init();
         activate('connections');
     });
 })(globalThis);
