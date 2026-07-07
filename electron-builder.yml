@@ -54,7 +54,13 @@ linux:
 # Uploads built installers to the matching GitHub Release when electron-builder
 # is invoked with `--publish always` (see .github/workflows/build-release.yml).
 # Local `npm run dist` uses `--publish never`, so nothing is uploaded by accident.
+#
+# `releaseType: release` is required because the release is created as *published*
+# (not a draft) before the workflow runs. electron-builder defaults to `draft`,
+# and a draft publishing type is "not compatible" with an already-published
+# release, which makes it silently skip every upload.
 publish:
     provider: github
     owner: JoernBerkefeld
     repo: sfmc-dataloader-app
+    releaseType: release

@@ -40,10 +40,12 @@ jobs:
               run: npx electron-builder --${{ matrix.platform }} --publish always
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                  # macOS code signing + notarization. All optional: when the
-                  # secrets are absent electron-builder produces an unsigned build
-                  # instead of failing, so the workflow still works before signing
-                  # certificates are configured.
+                  # macOS code signing + notarization. All optional: only attempt
+                  # signing when a certificate secret is actually present. With no
+                  # cert, CSC_IDENTITY_AUTO_DISCOVERY=false makes electron-builder
+                  # produce an *unsigned* build instead of crashing with
+                  # "<repo> not a file" while trying to resolve an empty CSC_LINK.
+                  CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CSC_LINK != '' }}
                   CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
                   CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
                   APPLE_ID: ${{ secrets.APPLE_ID }}
