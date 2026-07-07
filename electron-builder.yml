@@ -37,6 +37,10 @@ mac:
     gatekeeperAssess: false
     entitlements: build/entitlements.mac.plist
     entitlementsInherit: build/entitlements.mac.plist
+    # Default to an unsigned build. An empty CSC_LINK is otherwise treated as a
+    # certificate path and crashes with "<repo> not a file". To enable signing,
+    # remove this line and provide the MAC_CSC_LINK / APPLE_* repository secrets.
+    identity: null
     target:
         - target: dmg
           arch:
