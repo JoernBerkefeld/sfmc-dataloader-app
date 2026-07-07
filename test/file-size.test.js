@@ -60,7 +60,7 @@ test('summarizeFiles ignores unknown/negative sizes and handles empty input', ()
     assert.equal(empty.count, 0);
     assert.equal(empty.totalText, '0 B');
 
-    const bogus = summarizeFiles(null);
+    const bogus = summarizeFiles();
     assert.equal(bogus.count, 0);
 });
 

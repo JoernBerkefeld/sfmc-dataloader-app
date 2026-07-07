@@ -63,8 +63,8 @@ test('works without a timestamp/level prefix', () => {
     });
 });
 
-test('returns null for non-progress lines and empty input', () => {
-    assert.equal(parseProgressLine('17:04:12 info: Debug log: "/logs/data/x.log"'), null);
-    assert.equal(parseProgressLine(''), null);
-    assert.equal(parseProgressLine(), null);
+test('returns undefined for non-progress lines and empty input', () => {
+    assert.equal(parseProgressLine('17:04:12 info: Debug log: "/logs/data/x.log"'), undefined);
+    assert.equal(parseProgressLine(''), undefined);
+    assert.equal(parseProgressLine(), undefined);
 });

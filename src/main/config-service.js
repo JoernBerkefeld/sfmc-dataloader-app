@@ -15,9 +15,9 @@
  * object keeps unicorn/no-top-level-assignment-in-function happy while still
  * memoising the dynamic import.
  *
- * @type {{ promise: Promise.<typeof import('sfmc-dataloader')> | null }}
+ * @type {{ promise: Promise.<typeof import('sfmc-dataloader')> | undefined }}
  */
-const cache = { promise: null };
+const cache = { promise: undefined };
 
 /**
  * Loads (and caches) the pure-ESM sfmc-dataloader module.

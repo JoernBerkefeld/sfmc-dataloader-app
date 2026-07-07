@@ -34,8 +34,12 @@ function makeProject(secret) {
             account_id: 7_280_000,
         },
     };
-    fs.writeFileSync(path.join(root, '.mcdatarc.json'), JSON.stringify(rc, null, 4), 'utf8');
-    fs.writeFileSync(path.join(root, '.mcdata-auth.json'), JSON.stringify(auth, null, 4), 'utf8');
+    fs.writeFileSync(path.join(root, '.mcdatarc.json'), JSON.stringify(rc, undefined, 4), 'utf8');
+    fs.writeFileSync(
+        path.join(root, '.mcdata-auth.json'),
+        JSON.stringify(auth, undefined, 4),
+        'utf8',
+    );
     return root;
 }
 

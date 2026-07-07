@@ -36,15 +36,15 @@ function stripLogPrefix(line) {
 }
 
 /**
- * Parses a single log line into a structured progress event, or null when the
- * line carries no recognizable progress signal.
+ * Parses a single log line into a structured progress event, or undefined when
+ * the line carries no recognizable progress signal.
  *
  * @param {string} line
- * @returns {ProgressEvent | null}
+ * @returns {ProgressEvent | undefined}
  */
 function parseProgressLine(line) {
     if (typeof line !== 'string' || line.length === 0) {
-        return null;
+        return;
     }
     const body = stripLogPrefix(line);
 
@@ -98,7 +98,7 @@ function parseProgressLine(line) {
         return { phase: 'rowCount', when: 'after', records: Number(after[1]) };
     }
 
-    return null;
+    return;
 }
 
 module.exports = { parseProgressLine };

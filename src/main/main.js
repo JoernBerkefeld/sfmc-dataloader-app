@@ -28,9 +28,9 @@ async function toSizedFile(filePath) {
  * Mutable app state. Held on a const object so helper functions can update the
  * current window reference without reassigning a top-level binding.
  *
- * @type {{ mainWindow: BrowserWindow | null, jobManager: JobManager | null }}
+ * @type {{ mainWindow: BrowserWindow | undefined, jobManager: JobManager | undefined }}
  */
-const state = { mainWindow: null, jobManager: null };
+const state = { mainWindow: undefined, jobManager: undefined };
 
 const isDevelopment = !app.isPackaged;
 
@@ -69,7 +69,7 @@ function createWindow() {
     });
 
     win.on('closed', () => {
-        state.mainWindow = null;
+        state.mainWindow = undefined;
     });
 }
 
@@ -109,7 +109,7 @@ function registerIpcHandlers() {
         const result = await dialog.showOpenDialog(state.mainWindow ?? undefined, {
             properties: ['openDirectory', 'createDirectory'],
         });
-        return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+        return result.canceled || result.filePaths.length === 0 ? undefined : result.filePaths[0];
     });
 
     ipcMain.handle(CHANNELS.DIALOG_OPEN_FILES, async (_event, options) => {
@@ -148,7 +148,7 @@ function registerIpcHandlers() {
 async function bootstrap() {
     await app.whenReady();
     state.jobManager = new JobManager(() =>
-        state.mainWindow ? state.mainWindow.webContents : null,
+        state.mainWindow ? state.mainWindow.webContents : undefined,
     );
     registerIpcHandlers();
     createWindow();

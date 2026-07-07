@@ -152,7 +152,7 @@
         return {
             wrap,
             getFiles: () => files.map((file) => file.path),
-            getSizedFiles: () => files.slice(),
+            getSizedFiles: () => [...files],
         };
     }
 

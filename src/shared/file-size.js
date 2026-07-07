@@ -38,8 +38,13 @@ function formatBytes(bytes) {
         value /= 1024;
         unitIndex += 1;
     }
-    // One decimal below 10, two below 100, none above — compact but useful.
-    const decimals = value < 10 ? 2 : value < 100 ? 1 : 0;
+    // Two decimals below 10, one below 100, none above — compact but useful.
+    let decimals = 0;
+    if (value < 10) {
+        decimals = 2;
+    } else if (value < 100) {
+        decimals = 1;
+    }
     return `${value.toFixed(decimals)} ${units[unitIndex]}`;
 }
 
