@@ -6,6 +6,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { CHANNELS } = require('../shared/channels');
 const { JobManager } = require('./job-manager');
 const { UpdaterService } = require('./updater');
+const { SettingsStore } = require('./settings-store');
+const { Analytics } = require('./analytics');
 const configService = require('./config-service');
 
 /**
@@ -33,9 +35,17 @@ async function toSizedFile(filePath) {
  *   mainWindow: BrowserWindow | undefined,
  *   jobManager: JobManager | undefined,
  *   updater: UpdaterService | undefined,
+ *   settings: SettingsStore | undefined,
+ *   analytics: Analytics | undefined,
  * }}
  */
-const state = { mainWindow: undefined, jobManager: undefined, updater: undefined };
+const state = {
+    mainWindow: undefined,
+    jobManager: undefined,
+    updater: undefined,
+    settings: undefined,
+    analytics: undefined,
+};
 
 const isDevelopment = !app.isPackaged;
 
@@ -144,6 +154,11 @@ function registerIpcHandlers() {
     ipcMain.handle(CHANNELS.JOB_START, (_event, job) => state.jobManager.start(job));
     ipcMain.handle(CHANNELS.JOB_CANCEL, (_event, jobId) => state.jobManager.cancel(jobId));
 
+    ipcMain.handle(CHANNELS.SETTINGS_GET, () => state.settings?.getState());
+    ipcMain.handle(CHANNELS.SETTINGS_SET_CONSENT, (_event, value) =>
+        state.settings?.setConsent(value),
+    );
+
     ipcMain.handle(CHANNELS.UPDATE_CHECK, () => state.updater?.checkForUpdates());
     ipcMain.handle(CHANNELS.UPDATE_INSTALL, () => state.updater?.quitAndInstall() ?? false);
 }
@@ -155,8 +170,32 @@ function registerIpcHandlers() {
  */
 async function bootstrap() {
     await app.whenReady();
+
+    // Load settings (clientId + consent) and derive the install/update/launch
+    // lifecycle event. All I/O here is async so startup is never blocked.
+    const settings = new SettingsStore({
+        filePath: path.join(app.getPath('userData'), 'settings.json'),
+        currentVersion: app.getVersion(),
+    });
+    const lifecycle = await settings.init();
+    state.settings = settings;
+
+    // Analytics is disabled automatically in dev/unpackaged builds and when the
+    // GA4 ids were not injected at build time (see analytics-config.js).
+    const analytics = new Analytics({
+        settings,
+        appVersion: app.getVersion(),
+        locale: app.getLocale(),
+        enabled: app.isPackaged,
+    });
+    state.analytics = analytics;
+
+    // Fire the mandatory lifecycle ping (install/update always + app_launch on
+    // every startup). Non-blocking and consent-independent.
+    analytics.trackLifecycle(lifecycle.event);
+
     const getWebContents = () => (state.mainWindow ? state.mainWindow.webContents : undefined);
-    state.jobManager = new JobManager(getWebContents);
+    state.jobManager = new JobManager(getWebContents, analytics);
     state.updater = new UpdaterService(getWebContents, { isPackaged: app.isPackaged });
     registerIpcHandlers();
     createWindow();

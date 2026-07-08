@@ -79,5 +79,7 @@
         showRuntimeInfo();
         globalObject.McUpdates.init();
         activate('connections');
+        // First-run telemetry consent prompt (no-op once the user has chosen).
+        globalObject.McSettings.initConsentGate();
     });
 })(globalThis);

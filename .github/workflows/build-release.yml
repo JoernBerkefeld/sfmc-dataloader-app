@@ -40,6 +40,16 @@ jobs:
             - run: npm run lint
             - run: npm test
 
+            # Inject the GA4 Measurement Protocol credentials into the bundle so
+            # in-app telemetry can send events. Writes a gitignored file that
+            # electron-builder packs into the asar. When the secrets are unset
+            # (forks / PRs) the script skips and the build ships telemetry-off.
+            - name: Inject analytics config
+              run: node scripts/write-analytics-config.mjs
+              env:
+                  GA4_MEASUREMENT_ID: ${{ secrets.GA4_MEASUREMENT_ID }}
+                  GA4_API_SECRET: ${{ secrets.GA4_API_SECRET }}
+
             # rpm target needs rpmbuild on the runner (not installed by default).
             - name: Install rpm tooling (Linux)
               if: matrix.platform == 'linux'
