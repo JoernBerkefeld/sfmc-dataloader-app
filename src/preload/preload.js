@@ -19,6 +19,9 @@ const CHANNELS = {
     JOB_START: 'job:start',
     JOB_CANCEL: 'job:cancel',
 
+    SETTINGS_GET: 'settings:get',
+    SETTINGS_SET_CONSENT: 'settings:setConsent',
+
     UPDATE_CHECK: 'update:check',
     UPDATE_INSTALL: 'update:install',
 
@@ -115,6 +118,23 @@ const api = {
      * @returns {() => void} unsubscribe
      */
     onJobError: (handler) => subscribe(CHANNELS.JOB_ERROR, handler),
+
+    // --- telemetry consent ---------------------------------------------------
+    /**
+     * Reads the telemetry settings snapshot: `{ clientId, consent, version }`
+     * where consent is true (opted in), false (opted out), or undefined (not
+     * asked yet — drives the first-run consent prompt).
+     *
+     * @returns {Promise.<{ clientId: string, consent: (boolean | undefined), version: string }>}
+     */
+    getSettings: () => ipcRenderer.invoke(CHANNELS.SETTINGS_GET),
+    /**
+     * Records the user's optional-telemetry choice.
+     *
+     * @param {boolean} value - true to opt in, false to opt out
+     * @returns {Promise.<{ clientId: string, consent: boolean, version: string }>}
+     */
+    setTelemetryConsent: (value) => ipcRenderer.invoke(CHANNELS.SETTINGS_SET_CONSENT, value),
 
     // --- auto-update (electron-updater) --------------------------------------
     /**

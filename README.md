@@ -65,6 +65,40 @@ interrupt a running export or import. Installs via **deb/rpm/snap**, **Flatpak**
 or your package manager are updated the usual way (`apt`, `dnf`, `snap`,
 `flatpak update`, `winget upgrade`, `scoop update`, …).
 
+## Telemetry & privacy
+
+The app collects **anonymous product statistics only — never any personal or
+company data.** Full details are in **[PRIVACY.md](PRIVACY.md)**.
+
+**Always collected** (anonymous, no consent needed):
+
+- App install, update, and launch events — to count active installs.
+- App version, operating system + version, CPU architecture, and how the app was
+  installed (e.g. NSIS, dmg, AppImage, snap, Flatpak).
+
+**Only if you opt in** (first-run prompt, or the **Settings** tab):
+
+- That an export or import ran, and whether it succeeded.
+- File format (CSV/TSV/JSON) and **coarse buckets** for file size, row count, and
+  number of Data Extensions.
+- Your app language (primary subtag only, e.g. `en`).
+
+**Never collected:** file names, folder paths, file contents, Business Unit
+names, credential names, any SFMC data, or anything that identifies you or your
+organisation.
+
+**Using the app without telemetry:**
+
+- Decline the first-run prompt (or toggle it off in **Settings**) to disable all
+  optional usage events — only the anonymous lifecycle pings remain.
+- Prefer **zero** telemetry of any kind? Use the underlying
+  [`sfmc-dataloader`](https://www.npmjs.com/package/sfmc-dataloader) CLI directly
+  — it has **no telemetry whatsoever**.
+
+Data is ingested through Google Analytics 4's **EU endpoint**. There is no
+uninstall event; inactive installs are simply inferred from the absence of launch
+pings. See [PRIVACY.md](PRIVACY.md) for the complete policy.
+
 ---
 
 ## For developers
@@ -157,6 +191,26 @@ absent the workflow still succeeds and produces an **unsigned** macOS build:
 | `APPLE_ID` | Apple ID used for notarization |
 | `APPLE_APP_SPECIFIC_PASSWORD` | app-specific password for that Apple ID |
 | `APPLE_TEAM_ID` | Apple Developer Team ID |
+
+### Telemetry configuration
+
+Telemetry is **off unless Google Analytics credentials are injected at build
+time**, so local and forked builds never send anything. The release workflow runs
+`scripts/write-analytics-config.mjs`, which reads two GitHub Actions secrets and
+writes the git-ignored `src/main/analytics-config.generated.json`:
+
+| Secret | Purpose |
+| --- | --- |
+| `GA4_MEASUREMENT_ID` | GA4 Measurement ID for the app's data stream |
+| `GA4_API_SECRET` | Measurement Protocol API secret for that stream |
+
+If either secret is missing the script skips file creation and the build ships
+with telemetry fully disabled. Events are sent from the **main process** only,
+non-blocking (deferred, fire-and-forget, timed-out), via GA4's EU endpoint
+(`region1.google-analytics.com`). The PII firewall lives in
+`src/shared/telemetry-events.js`; user-facing wording and the collected-data
+tables are in [PRIVACY.md](PRIVACY.md) — keep all three in sync when telemetry
+changes.
 
 ### Relationship to `sfmc-dataloader`
 

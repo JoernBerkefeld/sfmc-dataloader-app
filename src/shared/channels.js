@@ -22,6 +22,12 @@ const CHANNELS = {
     JOB_START: 'job:start',
     JOB_CANCEL: 'job:cancel',
 
+    // Telemetry consent (invoke/handle). GET returns the current settings
+    // snapshot (clientId, consent tri-state, version); SET_CONSENT records the
+    // user's opt-in/opt-out for optional usage telemetry.
+    SETTINGS_GET: 'settings:get',
+    SETTINGS_SET_CONSENT: 'settings:setConsent',
+
     // Auto-update (electron-updater). CHECK/INSTALL are invoke/handle; the
     // updater pushes lifecycle changes back over the UPDATE_STATUS event.
     UPDATE_CHECK: 'update:check',
