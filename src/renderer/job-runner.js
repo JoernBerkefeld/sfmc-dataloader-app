@@ -206,7 +206,7 @@
          * @returns {boolean}
          */
         get isRunning() {
-            return this.#jobId !== null;
+            return this.#jobId !== undefined;
         }
 
         /**
