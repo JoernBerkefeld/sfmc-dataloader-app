@@ -1,6 +1,6 @@
 {
     "name": "sfmc-dataloader-app",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "description": "Standalone cross-platform desktop app for SFMC Data Extension export/import (wraps sfmc-dataloader)",
     "author": "Joern Berkefeld <joern.berkefeld@gmail.com>",
     "license": "MIT",
