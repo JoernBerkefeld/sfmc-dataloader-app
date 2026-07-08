@@ -10,108 +10,118 @@
 // The state machine here is deliberately transport-agnostic: main translates
 // electron-updater events into these statuses, and the renderer renders them,
 // so neither side needs to know the other's vocabulary.
+//
+// IMPORTANT: the entire body is wrapped in an IIFE. The sandboxed renderer
+// loads this file and file-size.js as plain classic <script>s that share ONE
+// global lexical scope. Without this wrapper both files would declare a
+// top-level `const api` / `function attachGlobal`, and the second script to
+// load throws "Identifier 'api' has already been declared" — aborting it and
+// everything that depends on `globalThis.McUpdate` (the update banner, and via
+// the DOMContentLoaded chain the default view mount). Keeping the names local
+// to this IIFE makes the shared-scope collision impossible.
+(function attachUpdateStatus() {
+    /** The stages an update can be in, mirrored from electron-updater's events. */
+    const UPDATE_STATUS = {
+        IDLE: 'idle',
+        CHECKING: 'checking',
+        AVAILABLE: 'available',
+        NOT_AVAILABLE: 'not-available',
+        DOWNLOADING: 'downloading',
+        DOWNLOADED: 'downloaded',
+        ERROR: 'error',
+    };
 
-/** The stages an update can be in, mirrored from electron-updater's events. */
-const UPDATE_STATUS = {
-    IDLE: 'idle',
-    CHECKING: 'checking',
-    AVAILABLE: 'available',
-    NOT_AVAILABLE: 'not-available',
-    DOWNLOADING: 'downloading',
-    DOWNLOADED: 'downloaded',
-    ERROR: 'error',
-};
+    /**
+     * @typedef {object} UpdateState
+     * @property {string} status - one of UPDATE_STATUS
+     * @property {string} [version] - the target version (available/downloaded)
+     * @property {number} [percent] - download progress in [0,100] while downloading
+     * @property {string} [message] - error text when status is 'error'
+     */
 
-/**
- * @typedef {object} UpdateState
- * @property {string} status - one of UPDATE_STATUS
- * @property {string} [version] - the target version (available/downloaded)
- * @property {number} [percent] - download progress in [0,100] while downloading
- * @property {string} [message] - error text when status is 'error'
- */
-
-/**
- * Clamps a raw percent value into a whole number in [0,100]. Non-numeric input
- * yields 0 so the progress UI never renders NaN.
- *
- * @param {unknown} percent
- * @returns {number}
- */
-function clampPercent(percent) {
-    if (typeof percent !== 'number' || !Number.isFinite(percent)) {
-        return 0;
+    /**
+     * Clamps a raw percent value into a whole number in [0,100]. Non-numeric input
+     * yields 0 so the progress UI never renders NaN.
+     *
+     * @param {unknown} percent
+     * @returns {number}
+     */
+    function clampPercent(percent) {
+        if (typeof percent !== 'number' || !Number.isFinite(percent)) {
+            return 0;
+        }
+        return Math.max(0, Math.min(100, Math.round(percent)));
     }
-    return Math.max(0, Math.min(100, Math.round(percent)));
-}
 
-/**
- * Turns an update state into a short human-readable line plus flags the
- * renderer uses to decide which controls to show. `canInstall` is true only
- * once an update has been fully downloaded and is ready to apply on restart.
- *
- * @param {UpdateState} state
- * @returns {{ text: string, canInstall: boolean, isBusy: boolean }}
- */
-function describeUpdateStatus(state) {
-    const safe = state && typeof state === 'object' ? state : { status: UPDATE_STATUS.IDLE };
-    switch (safe.status) {
-        case UPDATE_STATUS.CHECKING: {
-            return { text: 'Checking for updates…', canInstall: false, isBusy: true };
-        }
-        case UPDATE_STATUS.AVAILABLE: {
-            const version = safe.version ? ` (v${safe.version})` : '';
-            return {
-                text: `Update available${version} — downloading…`,
-                canInstall: false,
-                isBusy: true,
-            };
-        }
-        case UPDATE_STATUS.NOT_AVAILABLE: {
-            return { text: 'You are on the latest version.', canInstall: false, isBusy: false };
-        }
-        case UPDATE_STATUS.DOWNLOADING: {
-            return {
-                text: `Downloading update… ${clampPercent(safe.percent)}%`,
-                canInstall: false,
-                isBusy: true,
-            };
-        }
-        case UPDATE_STATUS.DOWNLOADED: {
-            const version = safe.version ? ` (v${safe.version})` : '';
-            return {
-                text: `Update ready${version}. Restart to install.`,
-                canInstall: true,
-                isBusy: false,
-            };
-        }
-        case UPDATE_STATUS.ERROR: {
-            const detail = safe.message ? `: ${safe.message}` : '.';
-            return { text: `Update check failed${detail}`, canInstall: false, isBusy: false };
-        }
-        default: {
-            return { text: '', canInstall: false, isBusy: false };
+    /**
+     * Turns an update state into a short human-readable line plus flags the
+     * renderer uses to decide which controls to show. `canInstall` is true only
+     * once an update has been fully downloaded and is ready to apply on restart.
+     *
+     * @param {UpdateState} state
+     * @returns {{ text: string, canInstall: boolean, isBusy: boolean }}
+     */
+    function describeUpdateStatus(state) {
+        const safe = state && typeof state === 'object' ? state : { status: UPDATE_STATUS.IDLE };
+        switch (safe.status) {
+            case UPDATE_STATUS.CHECKING: {
+                return { text: 'Checking for updates…', canInstall: false, isBusy: true };
+            }
+            case UPDATE_STATUS.AVAILABLE: {
+                const version = safe.version ? ` (v${safe.version})` : '';
+                return {
+                    text: `Update available${version} — downloading…`,
+                    canInstall: false,
+                    isBusy: true,
+                };
+            }
+            case UPDATE_STATUS.NOT_AVAILABLE: {
+                return { text: 'You are on the latest version.', canInstall: false, isBusy: false };
+            }
+            case UPDATE_STATUS.DOWNLOADING: {
+                return {
+                    text: `Downloading update… ${clampPercent(safe.percent)}%`,
+                    canInstall: false,
+                    isBusy: true,
+                };
+            }
+            case UPDATE_STATUS.DOWNLOADED: {
+                const version = safe.version ? ` (v${safe.version})` : '';
+                return {
+                    text: `Update ready${version}. Restart to install.`,
+                    canInstall: true,
+                    isBusy: false,
+                };
+            }
+            case UPDATE_STATUS.ERROR: {
+                const detail = safe.message ? `: ${safe.message}` : '.';
+                return { text: `Update check failed${detail}`, canInstall: false, isBusy: false };
+            }
+            default: {
+                return { text: '', canInstall: false, isBusy: false };
+            }
         }
     }
-}
 
-const api = { UPDATE_STATUS, clampPercent, describeUpdateStatus };
+    const api = { UPDATE_STATUS, clampPercent, describeUpdateStatus };
 
-/**
- * Attaches the API to a global-like object. Written as a helper taking the
- * target as a parameter (mirrors src/shared/file-size.js) so the sandboxed
- * renderer can expose `McUpdate` without a bundler.
- *
- * @param {Record<string, unknown>} target
- * @returns {void}
- */
-function attachGlobal(target) {
-    target.McUpdate = api;
-}
+    /**
+     * Attaches the API to a global-like object. Written as a helper taking the
+     * target as a parameter (mirrors file-size.js) so the assignment is on a
+     * parameter rather than directly on `globalThis`.
+     *
+     * @param {Record<string, unknown>} target
+     * @returns {void}
+     */
+    function attachGlobal(target) {
+        target.McUpdate = api;
+    }
 
-if (typeof module === 'object' && module.exports) {
-    // CommonJS: main process + Node tests require this module.
-    module.exports = api;
-} else if (typeof globalThis !== 'undefined') {
-    // Sandboxed renderer loads this as a plain <script>; expose the helpers.
-    attachGlobal(globalThis);
-}
+    if (typeof module === 'object' && module.exports) {
+        // CommonJS: main process + Node tests require this module.
+        module.exports = api;
+    } else if (typeof globalThis !== 'undefined') {
+        // Sandboxed renderer loads this as a plain <script>; expose the helpers.
+        attachGlobal(globalThis);
+    }
+})();
