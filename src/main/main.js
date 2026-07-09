@@ -158,6 +158,9 @@ function registerIpcHandlers() {
     ipcMain.handle(CHANNELS.SETTINGS_SET_CONSENT, (_event, value) =>
         state.settings?.setConsent(value),
     );
+    ipcMain.handle(CHANNELS.SETTINGS_SET_PROJECT_ROOT, (_event, value) =>
+        state.settings?.setProjectRoot(value),
+    );
 
     ipcMain.handle(CHANNELS.UPDATE_CHECK, () => state.updater?.checkForUpdates());
     ipcMain.handle(CHANNELS.UPDATE_INSTALL, () => state.updater?.quitAndInstall() ?? false);
