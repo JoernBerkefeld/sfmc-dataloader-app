@@ -22,7 +22,9 @@ separate-locales: false
 
 finish-args:
     - --share=ipc
-    - --socket=x11
+    # Flathub linter rejects requesting both x11 and wayland; fallback-x11 gives
+    # Wayland-first with an X11 fallback.
+    - --socket=fallback-x11
     - --socket=wayland
     - --device=dri
     - --share=network
