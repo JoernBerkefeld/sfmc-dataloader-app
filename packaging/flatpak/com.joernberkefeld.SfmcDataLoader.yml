@@ -65,8 +65,8 @@ modules:
             # each release. electron-builder names the Debian package with the
             # dpkg arch (amd64), not x64 — the url and x-checker query below must
             # match that.
-            url: https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v0.4.0/sfmc-dataloader-app-0.4.0-linux-amd64.deb
-            sha256: 'f91b749ef44141cf5d55d944f23bb72364d87c57ecb31402d5b71b2e709e34a3'
+            url: https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v0.5.0/sfmc-dataloader-app-0.5.0-linux-amd64.deb
+            sha256: '199aa8daf09fae678adf573d62bbed6720abea3205ff195f0c4db9bfcb6e372c'
             dest-filename: sfmc-dataloader-app.deb
             x-checker-data:
                 type: json

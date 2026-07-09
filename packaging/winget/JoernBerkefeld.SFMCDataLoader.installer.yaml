@@ -3,7 +3,7 @@
 # PackageVersion, InstallerUrl and InstallerSha256 for each new release, so the
 # placeholder hash below only matters for the very first manual submission.
 PackageIdentifier: JoernBerkefeld.SFMCDataLoader
-PackageVersion: 0.4.0
+PackageVersion: 0.5.0
 InstallerLocale: en-US
 InstallerType: nullsoft
 Scope: user
@@ -14,7 +14,7 @@ InstallModes:
 UpgradeBehavior: install
 Installers:
     - Architecture: x64
-      InstallerUrl: https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v0.4.0/sfmc-dataloader-app-0.4.0-win-x64.exe
-      InstallerSha256: FACC4B38B0B80FA24C4F3C462F097ECEAF3BA17BCB6555A73E9BA9129C33A162
+      InstallerUrl: https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v0.5.0/sfmc-dataloader-app-0.5.0-win-x64.exe
+      InstallerSha256: 194AEDC85EFC7C221E57742F2E85C613BBF1034BE714AD1A8767BBAECD7FF272
 ManifestType: installer
 ManifestVersion: 1.12.0
