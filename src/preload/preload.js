@@ -21,6 +21,7 @@ const CHANNELS = {
 
     SETTINGS_GET: 'settings:get',
     SETTINGS_SET_CONSENT: 'settings:setConsent',
+    SETTINGS_SET_PROJECT_ROOT: 'settings:setProjectRoot',
 
     UPDATE_CHECK: 'update:check',
     UPDATE_INSTALL: 'update:install',
@@ -121,20 +122,28 @@ const api = {
 
     // --- telemetry consent ---------------------------------------------------
     /**
-     * Reads the telemetry settings snapshot: `{ clientId, consent, version }`
+     * Reads the settings snapshot: `{ clientId, consent, version, projectRoot }`
      * where consent is true (opted in), false (opted out), or undefined (not
-     * asked yet — drives the first-run consent prompt).
+     * asked yet — drives the first-run consent prompt) and projectRoot is the
+     * last selected project folder (empty when never set).
      *
-     * @returns {Promise.<{ clientId: string, consent: (boolean | undefined), version: string }>}
+     * @returns {Promise.<{ clientId: string, consent: (boolean | undefined), version: string, projectRoot: string }>}
      */
     getSettings: () => ipcRenderer.invoke(CHANNELS.SETTINGS_GET),
     /**
      * Records the user's optional-telemetry choice.
      *
      * @param {boolean} value - true to opt in, false to opt out
-     * @returns {Promise.<{ clientId: string, consent: boolean, version: string }>}
+     * @returns {Promise.<{ clientId: string, consent: boolean, version: string, projectRoot: string }>}
      */
     setTelemetryConsent: (value) => ipcRenderer.invoke(CHANNELS.SETTINGS_SET_CONSENT, value),
+    /**
+     * Persists the last selected project folder so it is restored next launch.
+     *
+     * @param {string} value - absolute path to the project folder
+     * @returns {Promise.<{ clientId: string, consent: (boolean | undefined), version: string, projectRoot: string }>}
+     */
+    setProjectRoot: (value) => ipcRenderer.invoke(CHANNELS.SETTINGS_SET_PROJECT_ROOT, value),
 
     // --- auto-update (electron-updater) --------------------------------------
     /**

@@ -105,11 +105,54 @@ test('getState returns a renderer-safe snapshot', async () => {
     const snapshot = store.getState();
     assert.deepEqual(
         Object.keys(snapshot).toSorted((a, b) => a.localeCompare(b)),
-        ['clientId', 'consent', 'version'],
+        ['clientId', 'consent', 'projectRoot', 'version'],
     );
     assert.equal(snapshot.version, '2.5.0');
     assert.equal(snapshot.consent, undefined);
+    assert.equal(snapshot.projectRoot, '');
     assert.equal(snapshot.clientId, store.getClientId());
+});
+
+test('setProjectRoot persists the folder and survives a reload', async () => {
+    const filePath = await temporarySettingsPath();
+
+    const store = new SettingsStore({ filePath, currentVersion: '1.0.0' });
+    await store.init();
+    assert.equal(store.getProjectRoot(), '');
+
+    const state = await store.setProjectRoot('/home/me/project');
+    assert.equal(state.projectRoot, '/home/me/project');
+    assert.equal(store.getProjectRoot(), '/home/me/project');
+
+    const reloaded = new SettingsStore({ filePath, currentVersion: '1.0.0' });
+    await reloaded.init();
+    assert.equal(reloaded.getProjectRoot(), '/home/me/project');
+    assert.equal(reloaded.getState().projectRoot, '/home/me/project');
+});
+
+test('setProjectRoot coerces a non-string to an empty string', async () => {
+    const filePath = await temporarySettingsPath();
+    const store = new SettingsStore({ filePath, currentVersion: '1.0.0' });
+    await store.init();
+
+    await store.setProjectRoot('/tmp/x');
+    assert.equal(store.getProjectRoot(), '/tmp/x');
+
+    await store.setProjectRoot(undefined);
+    assert.equal(store.getProjectRoot(), '');
+});
+
+test('the project folder is preserved across an update', async () => {
+    const filePath = await temporarySettingsPath();
+
+    const first = new SettingsStore({ filePath, currentVersion: '1.0.0' });
+    await first.init();
+    await first.setProjectRoot('/data/mcproject');
+
+    const upgraded = new SettingsStore({ filePath, currentVersion: '1.1.0' });
+    const upgradedResult = await upgraded.init();
+    assert.equal(upgradedResult.event, LIFECYCLE.UPDATE);
+    assert.equal(upgraded.getProjectRoot(), '/data/mcproject');
 });
 
 test('a corrupt settings file is tolerated as a fresh install', async () => {

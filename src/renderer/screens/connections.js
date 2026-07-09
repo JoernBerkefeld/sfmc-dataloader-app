@@ -249,6 +249,9 @@
                 return;
             }
             globalObject.McState.set({ projectRoot: chosen });
+            // Persist so the folder is restored on the next app launch. Fire-and-
+            // forget: a failure to persist must not block using the folder now.
+            void globalObject.mcdata.setProjectRoot(chosen);
             toast('Project folder set.', 'success');
             refreshSaved();
         });

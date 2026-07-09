@@ -21,6 +21,7 @@ If you've ever been handed instructions to "install Node, open a terminal, and r
 - **Handles very large Data Extensions** (multiple gigabytes) by streaming data straight to and from disk, so your computer doesn't run out of memory.
 - **Keeps you safe** with clear confirmations before anything destructive: you must type to confirm a "clear before import", you can automatically back up a Data Extension before overwriting it, and you get a heads-up before importing very large files.
 - **Remembers your connections** so you don't re-enter credentials every time.
+- **Remembers your last project folder** so it's pre-selected the next time you open the app.
 
 ## Is it safe with my credentials?
 

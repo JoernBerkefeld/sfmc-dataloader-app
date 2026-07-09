@@ -17,6 +17,10 @@
 //                       opted out, undefined = not asked yet (drives the first-
 //                       run consent prompt). Mandatory lifecycle pings do not
 //                       depend on this flag; only the optional usage events do.
+//   - projectRoot       the absolute path of the sfmc-dataloader project folder
+//                       last selected by the user, so it is pre-filled on the
+//                       next launch instead of forcing a re-pick every time. It
+//                       is a plain filesystem path and is never sent anywhere.
 //
 // All disk I/O is async so nothing here blocks the main thread. The file path is
 // injectable so tests can point at a temp file instead of the real userData dir.
@@ -47,8 +51,13 @@ class SettingsStore {
         this._filePath = options.filePath;
         /** @type {string} */
         this._currentVersion = options.currentVersion;
-        /** @type {{ clientId: string, lastVersion: string | undefined, telemetryConsent: (boolean | undefined) }} */
-        this._state = { clientId: '', lastVersion: undefined, telemetryConsent: undefined };
+        /** @type {{ clientId: string, lastVersion: string | undefined, telemetryConsent: (boolean | undefined), projectRoot: string }} */
+        this._state = {
+            clientId: '',
+            lastVersion: undefined,
+            telemetryConsent: undefined,
+            projectRoot: '',
+        };
         /** @type {boolean} */
         this._loaded = false;
     }
@@ -104,6 +113,7 @@ class SettingsStore {
             stored.telemetryConsent === true || stored.telemetryConsent === false
                 ? stored.telemetryConsent
                 : undefined;
+        const projectRoot = typeof stored.projectRoot === 'string' ? stored.projectRoot : '';
 
         let event = LIFECYCLE.LAUNCH;
         if (!isHadClientId && previousVersion === undefined) {
@@ -112,7 +122,12 @@ class SettingsStore {
             event = LIFECYCLE.UPDATE;
         }
 
-        this._state = { clientId, lastVersion: this._currentVersion, telemetryConsent };
+        this._state = {
+            clientId,
+            lastVersion: this._currentVersion,
+            telemetryConsent,
+            projectRoot,
+        };
         this._loaded = true;
         await this.#write();
 
@@ -134,13 +149,21 @@ class SettingsStore {
     }
 
     /**
-     * @returns {{ clientId: string, consent: (boolean | undefined), version: string }} a snapshot for the renderer
+     * @returns {string} the last selected project folder (empty when never set)
+     */
+    getProjectRoot() {
+        return this._state.projectRoot;
+    }
+
+    /**
+     * @returns {{ clientId: string, consent: (boolean | undefined), version: string, projectRoot: string }} a snapshot for the renderer
      */
     getState() {
         return {
             clientId: this._state.clientId,
             consent: this._state.telemetryConsent,
             version: this._currentVersion,
+            projectRoot: this._state.projectRoot,
         };
     }
 
@@ -152,6 +175,19 @@ class SettingsStore {
      */
     async setConsent(value) {
         this._state.telemetryConsent = Boolean(value);
+        await this.#write();
+        return this.getState();
+    }
+
+    /**
+     * Records the last selected project folder and persists it so the next
+     * launch can pre-fill it. A non-string clears the stored value.
+     *
+     * @param {string} value - absolute path to the project folder
+     * @returns {Promise.<{ clientId: string, consent: (boolean | undefined), version: string, projectRoot: string }>}
+     */
+    async setProjectRoot(value) {
+        this._state.projectRoot = typeof value === 'string' ? value : '';
         await this.#write();
         return this.getState();
     }

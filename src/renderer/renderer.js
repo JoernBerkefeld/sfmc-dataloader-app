@@ -73,11 +73,32 @@
         render(globalObject.McState.get());
     }
 
-    addEventListener('DOMContentLoaded', () => {
+    /**
+     * Restores the last selected project folder from persisted settings so the
+     * app reopens on the folder the user last worked in. Best-effort: a bridge
+     * error simply leaves the project unset.
+     *
+     * @returns {Promise.<void>}
+     */
+    async function restoreProjectRoot() {
+        try {
+            const settings = await globalObject.mcdata.getSettings();
+            if (settings && typeof settings.projectRoot === 'string' && settings.projectRoot) {
+                globalObject.McState.set({ projectRoot: settings.projectRoot });
+            }
+        } catch {
+            // no persisted project folder; start unset
+        }
+    }
+
+    addEventListener('DOMContentLoaded', async () => {
         initTabs();
         initProjectLabel();
         showRuntimeInfo();
         globalObject.McUpdates.init();
+        // Restore the persisted project folder before mounting so the connections
+        // screen and header reflect it immediately.
+        await restoreProjectRoot();
         activate('connections');
         // First-run telemetry consent prompt (no-op once the user has chosen).
         globalObject.McSettings.initConsentGate();

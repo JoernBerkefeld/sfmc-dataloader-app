@@ -27,6 +27,8 @@ const CHANNELS = {
     // user's opt-in/opt-out for optional usage telemetry.
     SETTINGS_GET: 'settings:get',
     SETTINGS_SET_CONSENT: 'settings:setConsent',
+    // Persists the last selected project folder so it is restored on next launch.
+    SETTINGS_SET_PROJECT_ROOT: 'settings:setProjectRoot',
 
     // Auto-update (electron-updater). CHECK/INSTALL are invoke/handle; the
     // updater pushes lifecycle changes back over the UPDATE_STATUS event.
