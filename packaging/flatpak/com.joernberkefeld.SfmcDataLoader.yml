@@ -40,6 +40,11 @@ modules:
           - cp -a opt/SFMC\ Data\ Loader /app/sfmc-data-loader
           - install -Dm755 packaging/launcher.sh /app/bin/sfmc-data-loader
           - install -Dm644 usr/share/applications/*.desktop /app/share/applications/com.joernberkefeld.SfmcDataLoader.desktop
+          # electron sets Icon=sfmc-data-loader, but the icons above are renamed to
+          # the app-id, so the desktop entry must point at the app-id icon too.
+          - desktop-file-edit --set-icon=com.joernberkefeld.SfmcDataLoader /app/share/applications/com.joernberkefeld.SfmcDataLoader.desktop
+          # AppStream metadata so Flathub can render name/summary/screenshots.
+          - install -Dm644 com.joernberkefeld.SfmcDataLoader.metainfo.xml /app/share/metainfo/com.joernberkefeld.SfmcDataLoader.metainfo.xml
           - |
               for size in 16 32 48 64 128 256 512; do
                   icon="usr/share/icons/hicolor/${size}x${size}/apps/sfmc-data-loader.png"
@@ -51,6 +56,8 @@ modules:
           - type: file
             path: launcher.sh
             dest: packaging
+          - type: file
+            path: com.joernberkefeld.SfmcDataLoader.metainfo.xml
           - type: file
             # Maintained automatically by scripts/update-packaging-manifests.mjs on
             # each release. electron-builder names the Debian package with the
