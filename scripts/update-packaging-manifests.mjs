@@ -6,6 +6,7 @@
  *
  *   - packaging/scoop/sfmc-dataloader-app.json          (Windows .exe)
  *   - packaging/flatpak/com.joernberkefeld.SfmcDataLoader.yml  (Linux .deb)
+ *   - packaging/flatpak/com.joernberkefeld.SfmcDataLoader.metainfo.xml  (release history)
  *   - packaging/aur/PKGBUILD                            (Linux .AppImage)
  *   - packaging/winget/*.yaml                           (Windows .exe)
  *
@@ -145,6 +146,27 @@ async function main() {
         )
     ) {
         changed.push('packaging/flatpak/com.joernberkefeld.SfmcDataLoader.yml');
+    }
+
+    // --- Flatpak AppStream metainfo (release history) ---
+    // Flathub renders <releases>; each shipped version needs its own entry. Insert
+    // a new one at the top of <releases> when this version isn't listed yet, so the
+    // metadata never goes stale. Idempotent: a version already present is a no-op.
+    const today = new Date().toISOString().slice(0, 10);
+    if (
+        await editFile(
+            path.join(PKG, 'flatpak', 'com.joernberkefeld.SfmcDataLoader.metainfo.xml'),
+            (c) =>
+                c.includes(`<release version="${version}"`)
+                    ? c
+                    : c.replace(
+                          /( *)(<release\b)/,
+                          (_m, indent, tag) =>
+                              `${indent}<release version="${version}" date="${today}"/>\n${indent}${tag}`,
+                      ),
+        )
+    ) {
+        changed.push('packaging/flatpak/com.joernberkefeld.SfmcDataLoader.metainfo.xml');
     }
 
     // --- AUR (Linux .AppImage) ---
