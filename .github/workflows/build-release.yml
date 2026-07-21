@@ -32,7 +32,7 @@ jobs:
         name: build ${{ matrix.platform }} installers
         steps:
             - uses: actions/checkout@v7
-            - uses: actions/setup-node@v6
+            - uses: actions/setup-node@v7
               with:
                   node-version: '24'
 
@@ -110,7 +110,7 @@ jobs:
                   ref: main
                   persist-credentials: true
 
-            - uses: actions/setup-node@v6
+            - uses: actions/setup-node@v7
               with:
                   node-version: '24'
 
