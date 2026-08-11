@@ -225,7 +225,9 @@ function buildMcdataArgv(job) {
     if (!job || typeof job !== 'object') {
         throw new TypeError('job must be an object');
     }
-    /** @type {string[]} */
+    /**
+     * @type {string[]}
+     */
     const argv = ['node', 'mcdata'];
 
     switch (job.kind) {

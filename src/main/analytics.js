@@ -44,35 +44,57 @@ class Analytics {
      * @param {string} [options.osVersion] - override os.release(), for tests
      */
     constructor(options) {
-        /** @type {import('./settings-store').SettingsStore} */
+        /**
+         * @type {import('./settings-store').SettingsStore}
+         */
         this._settings = options.settings;
-        /** @type {string} */
+        /**
+         * @type {string}
+         */
         this._appVersion = options.appVersion;
-        /** @type {string | undefined} */
+        /**
+         * @type {string | undefined}
+         */
         this._locale = options.locale;
-        /** @type {boolean} */
+        /**
+         * @type {boolean}
+         */
         this._enabled = options.enabled ?? true;
-        /** @type {object} */
+        /**
+         * @type {object}
+         */
         this._config = options.config ?? defaultConfig;
-        /** @type {typeof fetch} */
+        /**
+         * @type {typeof fetch}
+         */
         this._fetch = options.fetch ?? globalThis.fetch;
-        /** @type {(callback: () => void) => void} */
+        /**
+         * @type {(callback: () => void) => void}
+         */
         this._schedule = options.schedule ?? setImmediate;
-        /** @type {{ platform: string, arch: string, env: Record<string, string | undefined>, windowsStore?: boolean }} */
+        /**
+         * @type {{ platform: string, arch: string, env: Record<string, string | undefined>, windowsStore?: boolean }}
+         */
         this._runtime = options.runtime ?? {
             platform: process.platform,
             arch: process.arch,
             env: process.env,
             windowsStore: process.windowsStore,
         };
-        /** @type {string} */
+        /**
+         * @type {string}
+         */
         this._osVersion = options.osVersion ?? os.release();
-        /** @type {string} */
+        /**
+         * @type {string}
+         */
         this._channel = events.installChannel(this._runtime);
         // Per-process session id keeps GA4's active-user / engagement reporting
         // working. It is random and rotates every launch, so it identifies a run,
         // not a person, and adds no information beyond the existing client_id.
-        /** @type {string} */
+        /**
+         * @type {string}
+         */
         this._sessionId = String(Date.now());
     }
 

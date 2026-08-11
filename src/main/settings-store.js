@@ -28,7 +28,9 @@
 const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
 
-/** Lifecycle event derived from comparing stored vs. current version. */
+/**
+ * Lifecycle event derived from comparing stored vs. current version.
+ */
 const LIFECYCLE = {
     INSTALL: 'install',
     UPDATE: 'update',
@@ -47,18 +49,26 @@ class SettingsStore {
      * @param {string} options.currentVersion - app.getVersion()
      */
     constructor(options) {
-        /** @type {string} */
+        /**
+         * @type {string}
+         */
         this._filePath = options.filePath;
-        /** @type {string} */
+        /**
+         * @type {string}
+         */
         this._currentVersion = options.currentVersion;
-        /** @type {{ clientId: string, lastVersion: string | undefined, telemetryConsent: (boolean | undefined), projectRoot: string }} */
+        /**
+         * @type {{ clientId: string, lastVersion: string | undefined, telemetryConsent: (boolean | undefined), projectRoot: string }}
+         */
         this._state = {
             clientId: '',
             lastVersion: undefined,
             telemetryConsent: undefined,
             projectRoot: '',
         };
-        /** @type {boolean} */
+        /**
+         * @type {boolean}
+         */
         this._loaded = false;
     }
 

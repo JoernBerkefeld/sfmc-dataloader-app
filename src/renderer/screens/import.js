@@ -172,7 +172,9 @@
         function buildJob() {
             const mode = modeSelect.value;
             const projectRoot = globalObject.McState.get().projectRoot;
-            /** @type {Record<string, unknown>} */
+            /**
+             * @type {Record<string, unknown>}
+             */
             const job = {
                 mode: writeMode.value,
                 backupBeforeImport: backup.input.checked,

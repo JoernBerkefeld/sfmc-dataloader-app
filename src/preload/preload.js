@@ -50,13 +50,19 @@ const JOB_KIND = {
  * unsubscribe function so the renderer can clean up per-screen.
  */
 const api = {
-    /** Job-kind constants, mirrored from src/shared/channels.js. */
+    /**
+     * Job-kind constants, mirrored from src/shared/channels.js.
+     */
     JOB_KIND,
 
-    /** @returns {Promise.<object>} basic app/runtime info */
+    /**
+     * @returns {Promise.<object>} basic app/runtime info
+     */
     getAppInfo: () => ipcRenderer.invoke(CHANNELS.APP_INFO),
 
-    /** @returns {Promise.<string | null>} chosen directory path, or null if cancelled */
+    /**
+     * @returns {Promise.<string | null>} chosen directory path, or null if cancelled
+     */
     chooseDirectory: () => ipcRenderer.invoke(CHANNELS.DIALOG_OPEN_DIRECTORY),
 
     /**
@@ -96,7 +102,9 @@ const api = {
      * @returns {Promise.<{jobId: string}>}
      */
     startJob: (job) => ipcRenderer.invoke(CHANNELS.JOB_START, job),
-    /** @param {string} jobId */
+    /**
+     * @param {string} jobId
+     */
     cancelJob: (jobId) => ipcRenderer.invoke(CHANNELS.JOB_CANCEL, jobId),
 
     /**

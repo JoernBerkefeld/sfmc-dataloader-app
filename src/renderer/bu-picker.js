@@ -12,15 +12,25 @@
     const MANUAL = '__manual__';
 
     class BuPicker {
-        /** @type {HTMLElement} */
+        /**
+         * @type {HTMLElement}
+         */
         #root;
-        /** @type {HTMLSelectElement} */
+        /**
+         * @type {HTMLSelectElement}
+         */
         #select;
-        /** @type {HTMLInputElement} */
+        /**
+         * @type {HTMLInputElement}
+         */
         #manualInput;
-        /** @type {HTMLElement} */
+        /**
+         * @type {HTMLElement}
+         */
         #manualWrap;
-        /** @type {() => void} */
+        /**
+         * @type {() => void}
+         */
         #unsubscribe;
 
         /**

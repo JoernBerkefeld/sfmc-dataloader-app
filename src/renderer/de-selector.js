@@ -23,21 +23,37 @@
     }
 
     class DeSelector {
-        /** @type {() => string} */
+        /**
+         * @type {() => string}
+         */
         #getCredBu;
-        /** @type {HTMLElement} */
+        /**
+         * @type {HTMLElement}
+         */
         #root;
-        /** @type {HTMLSelectElement} */
+        /**
+         * @type {HTMLSelectElement}
+         */
         #modeSelect;
-        /** @type {HTMLElement} */
+        /**
+         * @type {HTMLElement}
+         */
         #listWrap;
-        /** @type {HTMLElement} */
+        /**
+         * @type {HTMLElement}
+         */
         #checkList;
-        /** @type {HTMLElement} */
+        /**
+         * @type {HTMLElement}
+         */
         #listStatus;
-        /** @type {HTMLTextAreaElement} */
+        /**
+         * @type {HTMLTextAreaElement}
+         */
         #manualArea;
-        /** @type {HTMLElement} */
+        /**
+         * @type {HTMLElement}
+         */
         #manualWrap;
 
         /**

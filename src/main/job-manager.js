@@ -33,13 +33,21 @@ class JobManager {
      * @param {import('./analytics').Analytics} [analytics] - optional telemetry sink
      */
     constructor(getWebContents, analytics) {
-        /** @type {() => import('electron').WebContents | null} */
+        /**
+         * @type {() => import('electron').WebContents | null}
+         */
         this._getWebContents = getWebContents;
-        /** @type {import('./analytics').Analytics | undefined} */
+        /**
+         * @type {import('./analytics').Analytics | undefined}
+         */
         this._analytics = analytics;
-        /** @type {Map<string, import('electron').UtilityProcess>} */
+        /**
+         * @type {Map<string, import('electron').UtilityProcess>}
+         */
         this._jobs = new Map();
-        /** @type {Map<string, { kind: string, peakRows: number }>} */
+        /**
+         * @type {Map<string, { kind: string, peakRows: number }>}
+         */
         this._jobMeta = new Map();
     }
 

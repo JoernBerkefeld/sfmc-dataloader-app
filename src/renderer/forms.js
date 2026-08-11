@@ -123,7 +123,9 @@
      */
     function filePicker(options) {
         const fileSize = globalObject.McFileSize;
-        /** @type {{ path: string, size: number }[]} */
+        /**
+         * @type {{ path: string, size: number }[]}
+         */
         let files = [];
         const text = input({ placeholder: 'No files selected' });
         text.readOnly = true;

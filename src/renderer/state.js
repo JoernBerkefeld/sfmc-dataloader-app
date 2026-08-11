@@ -8,7 +8,9 @@
     const listeners = new Set();
 
     const state = {
-        /** @type {string} absolute path to the project root, or '' */
+        /**
+         * @type {string} absolute path to the project root, or ''
+         */
         projectRoot: '',
     };
 

@@ -15,7 +15,9 @@
 // to stay open on a stable connection — not about routing to a different code
 // path.
 
-/** Files at or above this many bytes trigger a blocking confirmation. 1 GiB. */
+/**
+ * Files at or above this many bytes trigger a blocking confirmation. 1 GiB.
+ */
 const LARGE_FILE_WARN_BYTES = 1024 * 1024 * 1024;
 
 /**

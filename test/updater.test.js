@@ -7,7 +7,9 @@ const { UpdaterService } = require('../src/main/updater');
 const { CHANNELS } = require('../src/shared/channels');
 const { UPDATE_STATUS } = require('../src/shared/update-status');
 
-/** Web contents that is never present — exercises the null-window code path. */
+/**
+ * Web contents that is never present — exercises the null-window code path.
+ */
 const noWebContents = () => {};
 
 /**

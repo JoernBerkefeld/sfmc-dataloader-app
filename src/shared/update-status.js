@@ -20,7 +20,9 @@
 // the DOMContentLoaded chain the default view mount). Keeping the names local
 // to this IIFE makes the shared-scope collision impossible.
 (function attachUpdateStatus() {
-    /** The stages an update can be in, mirrored from electron-updater's events. */
+    /**
+     * The stages an update can be in, mirrored from electron-updater's events.
+     */
     const UPDATE_STATUS = {
         IDLE: 'idle',
         CHECKING: 'checking',

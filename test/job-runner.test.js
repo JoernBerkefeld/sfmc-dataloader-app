@@ -12,10 +12,14 @@ const path = require('node:path');
 // and a fake `mcdata` bridge — just enough surface for the runner to build its
 // DOM and drive one job through the job:* event stream.
 
-/** No-op unsubscribe returned by the fake event subscriptions. */
+/**
+ * No-op unsubscribe returned by the fake event subscriptions.
+ */
 const noopUnsubscribe = () => {};
 
-/** Minimal classList stand-in backed by a Set. */
+/**
+ * Minimal classList stand-in backed by a Set.
+ */
 class FakeClassList {
     #set = new Set();
 
@@ -63,7 +67,9 @@ class FakeClassList {
  * helpers and JobRunner touch (class/text/attribute/append/listeners/etc.).
  */
 class FakeNode {
-    /** @param {string} tag */
+    /**
+     * @param {string} tag
+     */
     constructor(tag) {
         this.tagName = tag;
         this.className = '';
@@ -78,7 +84,9 @@ class FakeNode {
         this.listeners = new Map();
     }
 
-    /** @returns {FakeNode | undefined} */
+    /**
+     * @returns {FakeNode | undefined}
+     */
     get firstElementChild() {
         return this.children.at(0);
     }
@@ -116,12 +124,16 @@ class FakeNode {
         this.children.push(...kids);
     }
 
-    /** @returns {void} */
+    /**
+     * @returns {void}
+     */
     replaceChildren() {
         this.children = [];
     }
 
-    /** @returns {void} */
+    /**
+     * @returns {void}
+     */
     remove() {}
 
     /**

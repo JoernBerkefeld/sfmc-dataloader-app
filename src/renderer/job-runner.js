@@ -40,19 +40,33 @@
     }
 
     class JobRunner {
-        /** @type {string | undefined} */
+        /**
+         * @type {string | undefined}
+         */
         #jobId = undefined;
-        /** @type {() => void[]} */
+        /**
+         * @type {() => void[]}
+         */
         #unsubscribers = [];
-        /** @type {HTMLElement} */
+        /**
+         * @type {HTMLElement}
+         */
         #root;
-        /** @type {HTMLElement} */
+        /**
+         * @type {HTMLElement}
+         */
         #fill;
-        /** @type {HTMLElement} */
+        /**
+         * @type {HTMLElement}
+         */
         #status;
-        /** @type {HTMLElement} */
+        /**
+         * @type {HTMLElement}
+         */
         #log;
-        /** @type {HTMLButtonElement} */
+        /**
+         * @type {HTMLButtonElement}
+         */
         #cancelButton;
 
         constructor() {

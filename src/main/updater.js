@@ -36,13 +36,21 @@ class UpdaterService {
      * @param {boolean} [options.isPackaged] - defaults to true; when false, checks are skipped
      */
     constructor(getWebContents, options = {}) {
-        /** @type {() => import('electron').WebContents | null | undefined} */
+        /**
+         * @type {() => import('electron').WebContents | null | undefined}
+         */
         this._getWebContents = getWebContents;
-        /** @type {import('electron-updater').AppUpdater} */
+        /**
+         * @type {import('electron-updater').AppUpdater}
+         */
         this._updater = options.updater ?? defaultUpdater();
-        /** @type {boolean} */
+        /**
+         * @type {boolean}
+         */
         this._isPackaged = options.isPackaged ?? true;
-        /** @type {import('../shared/update-status').UpdateState} */
+        /**
+         * @type {import('../shared/update-status').UpdateState}
+         */
         this._state = { status: UPDATE_STATUS.IDLE };
 
         // Downloads happen automatically; we control only the install/restart.

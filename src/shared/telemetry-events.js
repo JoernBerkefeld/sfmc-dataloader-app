@@ -38,13 +38,19 @@ const EVENTS = {
     JOB_OUTCOME: 'job_outcome',
 };
 
-/** Allowed export/import file formats; anything else normalises to 'other'. */
+/**
+ * Allowed export/import file formats; anything else normalises to 'other'.
+ */
 const FORMATS = new Set(['csv', 'tsv', 'json']);
 
-/** Allowed job outcomes. */
+/**
+ * Allowed job outcomes.
+ */
 const RESULTS = new Set(['success', 'error', 'cancelled']);
 
-/** Coarse job-kind enum values reported to analytics. */
+/**
+ * Coarse job-kind enum values reported to analytics.
+ */
 const KINDS = new Set(['export', 'export_multi_bu', 'import', 'import_cross_bu', 'init']);
 
 const MAX_STRING_LENGTH = 64;
@@ -254,7 +260,9 @@ function deCountBucket(count) {
  * @returns {Record<string, string | number | boolean>}
  */
 function sanitizeParameters(parameters) {
-    /** @type {Record<string, string | number | boolean>} */
+    /**
+     * @type {Record<string, string | number | boolean>}
+     */
     const safe = {};
     if (!parameters || typeof parameters !== 'object') {
         return safe;

@@ -115,7 +115,9 @@
             const deKeys = deSelector.getKeys();
             const projectRoot = outputPicker.input.value || globalObject.McState.get().projectRoot;
 
-            /** @type {Record<string, unknown>} */
+            /**
+             * @type {Record<string, unknown>}
+             */
             const job = {
                 deKeys,
                 format: formatSelect.value,
