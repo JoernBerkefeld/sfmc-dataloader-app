@@ -1,4 +1,8 @@
 #!/bin/sh
+# disable ANSI color codes in hook output (readable in Fork's plain-text log viewer)
+unset FORCE_COLOR
+export NO_COLOR=1
+
 if [ "${SKIP_HOOKS:-0}" -gt 0 ] 2>/dev/null; then
     echo "[POST-CHECKOUT] skipping hooks ($SKIP_HOOKS)"
     exit 0
