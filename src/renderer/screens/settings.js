@@ -109,7 +109,21 @@
         const toggle = checkbox('Send anonymous usage statistics to help improve the app', false);
         card.append(field('Optional usage telemetry', toggle.wrap));
 
+        let revision = 0;
+        globalObject.McScreens.settings.activate = async () => {
+            const request = ++revision;
+            try {
+                const settings = await mc.getSettings();
+                if (request === revision) {
+                    toggle.input.checked = settings?.consent === true;
+                }
+            } catch {
+                // Keep the current value when settings are unavailable.
+            }
+        };
+
         toggle.input.addEventListener('change', async () => {
+            revision++;
             const stored = await saveConsent(toggle.input.checked);
             toggle.input.checked = stored;
             toast(stored ? 'Usage statistics enabled.' : 'Usage statistics disabled.', 'info');
@@ -117,26 +131,6 @@
 
         root.append(card);
         container.append(root);
-
-        // Reflect the persisted value once the bridge answers. Fire-and-forget:
-        // any error simply leaves the toggle unchecked.
-        void reflectPersistedConsent(toggle);
-    }
-
-    /**
-     * Reads the stored consent and reflects it on the toggle. Errors leave the
-     * toggle unchecked.
-     *
-     * @param {{ input: HTMLInputElement }} toggle
-     * @returns {Promise.<void>}
-     */
-    async function reflectPersistedConsent(toggle) {
-        try {
-            const settings = await mc.getSettings();
-            toggle.input.checked = settings?.consent === true;
-        } catch {
-            // leave unchecked on error
-        }
     }
 
     /**

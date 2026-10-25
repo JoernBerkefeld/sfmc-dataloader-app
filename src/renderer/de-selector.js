@@ -27,6 +27,11 @@
          * @type {() => string}
          */
         #getCredBu;
+        #getContext;
+        #getProjectRoot;
+        #request = 0;
+        #provenance;
+        #unsubscribe;
         /**
          * @type {HTMLElement}
          */
@@ -57,11 +62,15 @@
         #manualWrap;
 
         /**
-         * @param {{ getCredBu: () => string }} options
+         * @param {{ getCredBu: () => string, getContext?: () => string, getProjectRoot?: () => string }} options
          */
         constructor(options) {
             this.#getCredBu = options.getCredBu;
+            this.#getContext = options.getContext ?? (() => '');
+            this.#getProjectRoot =
+                options.getProjectRoot ?? (() => globalObject.McState.get().projectRoot);
             this.#root = this.#build();
+            this.#unsubscribe = globalObject.McState.subscribe(() => this.invalidate());
         }
 
         /**
@@ -128,7 +137,10 @@
          * @returns {Promise.<void>}
          */
         async #loadList() {
-            const projectRoot = globalObject.McState.get().projectRoot;
+            this.invalidate();
+            const request = this.#request;
+            const provenance = this.#currentProvenance();
+            const projectRoot = this.#getProjectRoot();
             if (!projectRoot) {
                 toast('Select a project folder first.', 'warn');
                 return;
@@ -141,10 +153,14 @@
             this.#checkList.replaceChildren();
             this.#listStatus.textContent = 'Loading Data Extensions…';
             const result = await globalObject.McConnectionData.listDeItems(projectRoot, credBu);
+            if (request !== this.#request || provenance !== this.#currentProvenance()) {
+                return;
+            }
             if (!result.ok) {
                 this.#listStatus.textContent = 'Failed to load: ' + result.error;
                 return;
             }
+            this.#provenance = provenance;
             if (result.items.length === 0) {
                 this.#listStatus.textContent = 'No Data Extensions found in this Business Unit.';
                 return;
@@ -159,6 +175,34 @@
                 row.append(box, element('span', { text: labelText }));
                 this.#checkList.append(row);
             }
+        }
+
+        /**
+         * @returns {string} identity of the source and selection context
+         */
+        #currentProvenance() {
+            return JSON.stringify([this.#getProjectRoot(), this.#getCredBu(), this.#getContext()]);
+        }
+
+        /**
+         * Clears loaded selections and rejects outstanding responses.
+         * Manual keys remain an explicitly selected, unverified mode.
+         *
+         * @returns {void}
+         */
+        invalidate() {
+            this.#request++;
+            this.#provenance = undefined;
+            this.#checkList.replaceChildren();
+            this.#listStatus.textContent = 'Load the list to choose DEs.';
+        }
+
+        /**
+         * @returns {void}
+         */
+        dispose() {
+            this.invalidate();
+            this.#unsubscribe();
         }
 
         /**
@@ -182,6 +226,12 @@
                     throw new Error('Enter at least one Data Extension key.');
                 }
                 return keys;
+            }
+            if (this.#provenance !== this.#currentProvenance()) {
+                this.invalidate();
+                throw new Error(
+                    'Load the Data Extension list for the current project and Business Unit.',
+                );
             }
             const checked = this.#checkList.querySelectorAll('input[type="checkbox"]:checked');
             const keys = [...checked].map((box) => /** @type {HTMLInputElement} */ (box).value);

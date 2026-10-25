@@ -57,12 +57,14 @@ test('import checkbox defaults off and routes checked state across import modes'
         },
         McBuPicker: class {
             element = element('picker');
+            onChange() {}
             getValue() {
                 return 'Org/BU';
             }
         },
         McDeSelector: class {
             element = element('de');
+            invalidate() {}
             getKeys() {
                 return ['DE'];
             }

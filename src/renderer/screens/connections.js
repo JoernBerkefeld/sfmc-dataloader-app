@@ -100,6 +100,12 @@
             runner.element,
         );
 
+        let refreshRequest = 0;
+        globalObject.McScreens.connections.activate = () => {
+            picker.input.value = globalObject.McState.get().projectRoot;
+            void refreshSaved();
+        };
+
         // ── behaviour ────────────────────────────────────────────────────────
 
         /**
@@ -108,6 +114,7 @@
          * @returns {Promise.<void>}
          */
         async function refreshSaved() {
+            const request = ++refreshRequest;
             const projectRoot = globalObject.McState.get().projectRoot;
             clear(savedList);
             if (!projectRoot) {
@@ -119,7 +126,19 @@
             try {
                 result = await globalObject.mcdata.loadConfig(projectRoot);
             } catch (ex) {
+                if (
+                    request !== refreshRequest ||
+                    projectRoot !== globalObject.McState.get().projectRoot
+                ) {
+                    return;
+                }
                 savedStatus.textContent = 'Could not read config: ' + (ex?.message ?? String(ex));
+                return;
+            }
+            if (
+                request !== refreshRequest ||
+                projectRoot !== globalObject.McState.get().projectRoot
+            ) {
                 return;
             }
             if (!result.configured || result.credentials.length === 0) {
@@ -293,7 +312,6 @@
 
         root.append(projectField, projectActions, savedSection, addSection);
         container.append(root);
-        refreshSaved();
     }
 
     globalObject.McScreens ||= {};

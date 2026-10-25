@@ -3,9 +3,10 @@
 // Renderer entry point / router. The renderer is sandboxed: all privileged calls
 // go through window.mcdata (see src/preload/preload.js). No Node APIs here.
 // Screens are plain factory objects registered on globalThis.McScreens and are
-// (re)mounted into #view when their tab is activated.
+// lazily mounted once, then retained while their tab is hidden.
 (function initRenderer(globalObject) {
-    const { clear } = globalObject.McUI;
+    const mounted = new Map();
+    let activeView;
 
     /**
      * Mounts the screen matching the given view id into #view.
@@ -19,8 +20,21 @@
         if (!container || !screen) {
             return;
         }
-        clear(container);
-        screen.mount(container);
+        if (activeView === view) {
+            return;
+        }
+        let host = mounted.get(view);
+        if (!host) {
+            host = document.createElement('div');
+            container.append(host);
+            screen.mount(host);
+            mounted.set(view, host);
+        }
+        for (const [id, node] of mounted) {
+            node.hidden = id !== view;
+        }
+        activeView = view;
+        screen.activate?.();
     }
 
     /**

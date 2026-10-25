@@ -102,6 +102,7 @@
             const chosen = await globalObject.mcdata.chooseDirectory();
             if (chosen) {
                 text.value = chosen;
+                text.dispatchEvent(new Event('change'));
             }
         });
         const wrap = element('div', { class: 'picker' });

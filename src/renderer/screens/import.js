@@ -76,9 +76,17 @@
         });
 
         const deSelector = new globalObject.McDeSelector({
+            getContext: () => modeSelect.value,
             getCredBu: () =>
                 modeSelect.value === 'crossApi' ? fromPicker.getValue() : targetPicker.getValue(),
         });
+
+        targetPicker.onChange(() => deSelector.invalidate());
+        fromPicker.onChange(() => deSelector.invalidate());
+        globalObject.McScreens.import.activate = () => {
+            void targetPicker.refresh();
+            void fromPicker.refresh();
+        };
 
         const files = filePicker({ extensions: ['csv', 'tsv', 'json'] });
         const filesField = field('Files to import', files.wrap);
@@ -139,7 +147,10 @@
             filesField.style.display = isUsesFiles ? '' : 'none';
             skipEmptyLines.wrap.style.display = mode === 'crossApi' ? 'none' : '';
         }
-        modeSelect.addEventListener('change', applyMode);
+        modeSelect.addEventListener('change', () => {
+            deSelector.invalidate();
+            applyMode();
+        });
 
         runButton.addEventListener('click', async () => {
             if (runner.isRunning) {

@@ -49,7 +49,11 @@
         );
         sourcesField.style.display = 'none';
 
+        const outputPicker = directoryPicker({ placeholder: 'Defaults to the project folder' });
         const deSelector = new globalObject.McDeSelector({
+            getProjectRoot: () =>
+                outputPicker.input.value || globalObject.McState.get().projectRoot,
+            getContext: () => JSON.stringify([multi.input.checked, parseList(sourcesArea.value)]),
             getCredBu: () => {
                 if (multi.input.checked) {
                     return parseList(sourcesArea.value)[0] ?? '';
@@ -57,6 +61,10 @@
                 return sourcePicker.getValue();
             },
         });
+
+        sourcePicker.onChange(() => deSelector.invalidate());
+        sourcesArea.addEventListener('input', () => deSelector.invalidate());
+        globalObject.McScreens.export.activate = () => void sourcePicker.refresh();
 
         const formatSelect = select(
             [
@@ -74,7 +82,8 @@
         const maxRows = input({ type: 'number', placeholder: 'e.g. 100000' });
         const maxRowsField = field('Max rows per file', maxRows, 'optional — splits large exports');
 
-        const outputPicker = directoryPicker({ placeholder: 'Defaults to the project folder' });
+        outputPicker.input.addEventListener('input', () => deSelector.invalidate());
+        outputPicker.input.addEventListener('change', () => deSelector.invalidate());
         const outputField = field('Output folder (project root)', outputPicker.wrap);
 
         const runButton = button('Start export');
@@ -84,6 +93,7 @@
         const runner = new globalObject.JobRunner();
 
         multi.input.addEventListener('change', () => {
+            deSelector.invalidate();
             const on = multi.input.checked;
             sourcePicker.element.style.display = on ? 'none' : '';
             sourcesField.style.display = on ? '' : 'none';

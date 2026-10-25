@@ -32,6 +32,9 @@
          * @type {() => void}
          */
         #unsubscribe;
+        #request = 0;
+        #projectRoot;
+        #listeners = new Set();
 
         /**
          * @param {{ label?: string, hint?: string }} [options]
@@ -45,7 +48,11 @@
             this.#manualWrap = field('Enter credential/BU', this.#manualInput);
             this.#manualWrap.style.display = 'none';
 
-            this.#select.addEventListener('change', () => this.#applyMode());
+            this.#select.addEventListener('change', () => {
+                this.#applyMode();
+                this.#notify();
+            });
+            this.#manualInput.addEventListener('input', () => this.#notify());
 
             this.#root = element('div', { class: 'bu-picker' });
             this.#root.append(field(label, this.#select, hint), this.#manualWrap);
@@ -62,6 +69,17 @@
         }
 
         /**
+         * Notifies dependents immediately when the effective BU changes.
+         *
+         * @returns {void}
+         */
+        #notify() {
+            for (const listener of this.#listeners) {
+                listener();
+            }
+        }
+
+        /**
          * Repopulates the dropdown from the current project's saved connections,
          * always keeping the "Enter manually…" fallback last.
          *
@@ -69,9 +87,25 @@
          */
         async refresh() {
             const projectRoot = globalObject.McState.get().projectRoot;
-            const previous = this.#select.value;
+            const request = ++this.#request;
+            const isChangedProject = this.#projectRoot !== projectRoot;
+            let previous = isChangedProject ? '' : this.#select.value;
+            this.#projectRoot = projectRoot;
+            if (isChangedProject) {
+                this.#select.replaceChildren();
+                this.#manualInput.value = '';
+                this.#notify();
+            }
+            const before = this.getValue();
             const options = await globalObject.McConnectionData.listCredBuOptions(projectRoot);
+            if (
+                request !== this.#request ||
+                projectRoot !== globalObject.McState.get().projectRoot
+            ) {
+                return;
+            }
 
+            previous = this.#select.value || previous;
             this.#select.replaceChildren();
             if (options.length === 0) {
                 const empty = /** @type {HTMLOptionElement} */ (
@@ -100,6 +134,18 @@
                 this.#select.value = previous;
             }
             this.#applyMode();
+            if (before !== this.getValue()) {
+                this.#notify();
+            }
+        }
+
+        /**
+         * @param {() => void} listener
+         * @returns {() => void}
+         */
+        onChange(listener) {
+            this.#listeners.add(listener);
+            return () => this.#listeners.delete(listener);
         }
 
         /**
@@ -128,7 +174,9 @@
          * @returns {void}
          */
         dispose() {
+            this.#request++;
             this.#unsubscribe();
+            this.#listeners.clear();
         }
     }
 
