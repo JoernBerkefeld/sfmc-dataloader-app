@@ -12,7 +12,8 @@ async function main() {
         const window = new BrowserWindow({
             width: 900,
             height: 800,
-            webPreferences: { sandbox: true },
+            // Frame-based test synchronization must survive hook/window occlusion.
+            webPreferences: { sandbox: true, backgroundThrottling: false },
         });
         await window.loadURL('data:text/html,<button id="outside">Outside</button><main></main>');
         window.focus();
@@ -20,6 +21,19 @@ async function main() {
             fs.readFileSync(path.join(__dirname, '../../src/renderer/styles.css'), 'utf8'),
         );
         const run = (code) => window.webContents.executeJavaScript(code, true);
+        // Windows hooks can occlude this window; prove frames still run minimized.
+        // Xvfb runners need not provide a window manager supporting minimization.
+        if (process.platform === 'win32') {
+            const minimized = new Promise((resolve) => window.once('minimize', resolve));
+            window.minimize();
+            await minimized;
+            assert.equal(window.isMinimized(), true);
+            await run(
+                'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))',
+            );
+            window.restore();
+            window.focus();
+        }
         const key = async (keyCode, modifiers = []) => {
             window.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
             if (keyCode === 'Enter') {

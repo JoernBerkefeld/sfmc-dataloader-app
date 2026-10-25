@@ -159,3 +159,29 @@ test('Linux release tests use a virtual display without reducing the full suite'
     );
     assert.match(workflow, /run: npm test --no-workspaces\n\s+if: runner\.os != 'Linux'/u);
 });
+
+test('release initializes Electron serially and configures the Linux sandbox before tests', () => {
+    const workflow = fs.readFileSync(
+        path.join(__dirname, '../.github/workflows/build-release.yml'),
+        'utf8',
+    );
+    const initialization = workflow.indexOf('name: Initialize Electron before parallel tests');
+    const sandbox = workflow.indexOf('name: Configure Linux Electron sandbox');
+    const suite = workflow.indexOf('run: xvfb-run -a npm test --no-workspaces');
+    assert.ok(initialization > workflow.indexOf('run: npm ci --no-workspaces'));
+    assert.ok(sandbox > initialization && suite > sandbox);
+    assert.match(
+        workflow.slice(initialization, sandbox),
+        /run: node -e "console\.log\(require\('electron'\)\)"/u,
+    );
+    const setup = workflow.slice(sandbox, suite);
+    assert.match(setup, /if: runner\.os == 'Linux'\n\s+shell: bash/u);
+    assert.ok(setup.includes('electron_path=$(node -p "require(\'electron\')")'));
+    assert.ok(setup.includes('sandbox_path="$(dirname "$electron_path")/chrome-sandbox"'));
+    assert.ok(
+        setup.indexOf('sudo chown root:root "$sandbox_path"') <
+            setup.indexOf('sudo chmod 4755 "$sandbox_path"'),
+    );
+    assert.match(setup, /sudo chmod 4755 "\$sandbox_path"/u);
+    assert.doesNotMatch(workflow, /--no-sandbox|--disable-setuid-sandbox/u);
+});
