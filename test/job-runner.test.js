@@ -13,11 +13,6 @@ const path = require('node:path');
 // DOM and drive one job through the job:* event stream.
 
 /**
- * No-op unsubscribe returned by the fake event subscriptions.
- */
-const noopUnsubscribe = () => {};
-
-/**
  * Minimal classList stand-in backed by a Set.
  */
 class FakeClassList {
@@ -67,6 +62,7 @@ class FakeClassList {
  * helpers and JobRunner touch (class/text/attribute/append/listeners/etc.).
  */
 class FakeNode {
+    parent;
     /**
      * @param {string} tag
      */
@@ -79,6 +75,7 @@ class FakeNode {
         this.style = {};
         this.scrollTop = 0;
         this.scrollHeight = 0;
+        this.clientHeight = 200;
         this.hidden = false;
         this.classList = new FakeClassList();
         this.listeners = new Map();
@@ -121,7 +118,15 @@ class FakeNode {
      * @returns {void}
      */
     append(...kids) {
-        this.children.push(...kids);
+        for (const child of kids) {
+            if (child.tagName === 'fragment') {
+                this.append(...child.children);
+                child.children = [];
+            } else {
+                child.parent = this;
+                this.children.push(child);
+            }
+        }
     }
 
     /**
@@ -134,7 +139,11 @@ class FakeNode {
     /**
      * @returns {void}
      */
-    remove() {}
+    remove() {
+        if (this.parent) {
+            this.parent.children = this.parent.children.filter((node) => node !== this);
+        }
+    }
 
     /**
      * @param {string} event
@@ -168,19 +177,47 @@ function makeFakeBridge() {
         },
         onJobLog(handler) {
             emitters.log.push(handler);
-            return noopUnsubscribe;
+            return () => {
+                for (const bucket of Object.values(emitters)) {
+                    const index = bucket.indexOf(handler);
+                    if (index !== -1) {
+                        bucket.splice(index, 1);
+                    }
+                }
+            };
         },
         onJobProgress(handler) {
             emitters.progress.push(handler);
-            return noopUnsubscribe;
+            return () => {
+                for (const bucket of Object.values(emitters)) {
+                    const index = bucket.indexOf(handler);
+                    if (index !== -1) {
+                        bucket.splice(index, 1);
+                    }
+                }
+            };
         },
         onJobComplete(handler) {
             emitters.complete.push(handler);
-            return noopUnsubscribe;
+            return () => {
+                for (const bucket of Object.values(emitters)) {
+                    const index = bucket.indexOf(handler);
+                    if (index !== -1) {
+                        bucket.splice(index, 1);
+                    }
+                }
+            };
         },
         onJobError(handler) {
             emitters.error.push(handler);
-            return noopUnsubscribe;
+            return () => {
+                for (const bucket of Object.values(emitters)) {
+                    const index = bucket.indexOf(handler);
+                    if (index !== -1) {
+                        bucket.splice(index, 1);
+                    }
+                }
+            };
         },
         emit(stream, payload) {
             const handlers = emitters[stream] ?? [];
@@ -203,12 +240,27 @@ function loadJobRunner() {
     const document = {
         body: new FakeNode('body'),
         createElement: (tag) => new FakeNode(tag),
+        createDocumentFragment: () => new FakeNode('fragment'),
         // JobRunner builds its own DOM and never looks anything up; return
         // nothing so ui.js's toast lookups fall through to creating a container.
         querySelector() {},
     };
 
-    const sandbox = { document, mcdata, setTimeout, clearTimeout };
+    const scheduled = new Map();
+    let timerId = 0;
+    const sandbox = {
+        document,
+        mcdata,
+        setTimeout,
+        clearTimeout,
+    };
+    // Only the runner's timers are deterministic; ui.js toast timers stay unchanged.
+    const flush = () => {
+        for (const [id, callback] of scheduled) {
+            scheduled.delete(id);
+            callback();
+        }
+    };
     vm.createContext(sandbox);
 
     const scriptFiles = ['ui.js', 'job-runner.js'];
@@ -220,7 +272,17 @@ function loadJobRunner() {
         vm.runInContext(code, sandbox, { filename: scriptFile });
     }
 
-    return { runner: new sandbox.JobRunner(), mcdata };
+    sandbox.setTimeout = (callback, delay) => {
+        if (delay !== 16) {
+            return setTimeout(callback, delay);
+        }
+        scheduled.set(++timerId, callback);
+        return timerId;
+    };
+    sandbox.clearTimeout = (id) => {
+        scheduled.delete(id);
+    };
+    return { runner: new sandbox.JobRunner(), mcdata, flush, scheduled };
 }
 
 /**
@@ -234,6 +296,86 @@ function findCancelButton(root) {
     const controls = root.children.find((child) => child.className === 'job-controls');
     return controls && controls.firstElementChild;
 }
+
+test('bursts retain bounded recent output, batch writes, respect scrolling and flush at completion', async () => {
+    const { runner, mcdata, flush, scheduled } = loadJobRunner();
+    const pending = runner.start({ kind: 'export' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const log = runner.element.children.find((node) => node.className === 'job-log');
+    log.scrollHeight = 2000;
+    log.scrollTop = 100;
+    for (let batch = 0; batch < 5; batch++) {
+        for (let index = 0; index < 3000; index++) {
+            mcdata.emit('log', { jobId: 'job-1', level: 'info', line: `${batch}:${index}` });
+        }
+        assert.equal(scheduled.size, 1);
+        flush();
+        assert.ok(log.children.length <= 1000);
+        assert.ok(
+            log.children.reduce((bytes, node) => bytes + node.textContent.length * 2, 0) <=
+                512 * 1024,
+        );
+        assert.equal(log.scrollTop, 100, 'reading earlier output must not force the tail');
+    }
+    assert.equal(log.children.at(-1).textContent, '4:2999\n');
+    assert.equal(
+        runner.element.children.find((node) => node.textContent.startsWith('Older output')).hidden,
+        false,
+    );
+    for (let batch = 0; batch < 4; batch++) {
+        for (let index = 0; index < 100; index++) {
+            mcdata.emit('log', { jobId: 'job-1', level: 'info', line: 'b'.repeat(9000) });
+        }
+        flush();
+        assert.ok(log.children.length <= 1000);
+        if (batch > 1) {
+            assert.ok(log.children.length <= 64, 'displayed byte budget evicts below the node cap');
+        }
+        assert.ok(
+            log.children.reduce((bytes, node) => bytes + node.textContent.length * 2, 0) <=
+                512 * 1024,
+        );
+    }
+    log.scrollTop = 1800;
+    mcdata.emit('log', { jobId: 'job-1', level: 'warn', line: 'x'.repeat(100_000) + 'LATEST' });
+    mcdata.emit('complete', { jobId: 'job-1', exitCode: 0 });
+    const outcome = await pending;
+    assert.equal(outcome.ok, true);
+    assert.equal(scheduled.size, 0);
+    assert.ok(log.children.at(-1).textContent.length * 2 <= 8192);
+    assert.ok(log.children.at(-1).textContent.endsWith('LATEST\n'));
+    assert.equal(log.scrollTop, 2000);
+    runner.reset();
+    flush();
+    assert.equal(log.children.length, 0);
+});
+
+test('pre-ack log bursts are bounded without losing progress or terminal replay', async () => {
+    const { runner, mcdata, scheduled } = loadJobRunner();
+    const { promise, resolve } = Promise.withResolvers();
+    mcdata.startJob = () => promise;
+    const pending = runner.start({ kind: 'export' });
+    for (let index = 0; index < 5000; index++) {
+        mcdata.emit('log', { jobId: 'job-1', level: 'info', line: 'z'.repeat(100_000) + index });
+    }
+    mcdata.emit('progress', { jobId: 'job-1', event: { phase: 'exported', records: 12 } });
+    mcdata.emit('complete', { jobId: 'job-1', exitCode: 0 });
+    assert.equal(scheduled.size, 0);
+    resolve({ jobId: 'job-1' });
+    const outcome = await pending;
+    assert.equal(outcome.ok, true);
+    const log = runner.element.children.find((node) => node.className === 'job-log');
+    assert.ok(log.children.length <= 32, '256 KiB pre-ack and pending byte budgets');
+    assert.ok(log.children.at(-1).textContent.endsWith('4999\n'));
+    assert.equal(scheduled.size, 0);
+    // Use a distinct id as real main-process jobs do, so inert old fake subscriptions cannot match.
+    mcdata.startJob = async () => ({ jobId: 'job-2' });
+    const second = runner.start({ kind: 'export' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(log.children.length, 0);
+    mcdata.emit('complete', { jobId: 'job-2', exitCode: 0 });
+    await second;
+});
 
 test('start rejection is visible and startup prevents reentry', async () => {
     const { runner, mcdata } = loadJobRunner();

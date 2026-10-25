@@ -41,6 +41,13 @@
         }
     }
 
+    // Byte budgets count UTF-16 text storage (two bytes per code unit), including newlines.
+    const MAX_PENDING_LINES = 500;
+    const MAX_PENDING_BYTES = 256 * 1024;
+    const MAX_DISPLAY_LINES = 1000;
+    const MAX_DISPLAY_BYTES = 512 * 1024;
+    const MAX_LINE_BYTES = 8 * 1024;
+
     class JobRunner {
         /**
          * @type {string | undefined}
@@ -48,6 +55,15 @@
         #jobId = undefined;
         #starting = false;
         #pendingEvents = [];
+        #earlyLogBytes = 0;
+        #earlyLogCount = 0;
+        #pendingLogs = [];
+        #pendingLogBytes = 0;
+        #displayedLogs = [];
+        #displayedLogBytes = 0;
+        #logTimer;
+        #droppedOutput = false;
+        #logNotice;
         /**
          * @type {() => void[]}
          */
@@ -105,7 +121,12 @@
             const controls = element('div', { class: 'job-controls' });
             controls.append(this.#cancelButton);
 
-            root.append(bar, this.#status, controls, this.#log);
+            this.#logNotice = element('p', {
+                class: 'muted',
+                text: 'Older output was discarded or an oversized line was truncated; showing recent output only.',
+            });
+            this.#logNotice.hidden = true;
+            root.append(bar, this.#status, controls, this.#logNotice, this.#log);
             return root;
         }
 
@@ -127,16 +148,109 @@
         }
 
         /**
-         * Appends a line to the log panel and keeps it scrolled to the bottom.
+         * Caps each incoming line before retaining it, preserving its newest text.
          *
-         * @param {string} level - info|warn|error
+         * @param {object} payload
+         * @returns {object}
+         */
+        #boundedLog(payload) {
+            const line = String(payload.line);
+            const isTruncated = line.length > MAX_LINE_BYTES / 2 - 1;
+            return {
+                jobId: payload.jobId,
+                level: ['info', 'warn', 'error', 'debug'].includes(payload.level)
+                    ? payload.level
+                    : 'info',
+                // Copy the bounded suffix so a sliced string cannot retain its oversized backing store.
+                line: isTruncated
+                    ? line
+                          .slice(-(MAX_LINE_BYTES / 2 - 2))
+                          .split('')
+                          .join('')
+                    : line,
+                truncated: isTruncated,
+            };
+        }
+
+        /**
+         * Queues bounded output for one DOM update per frame-sized interval.
+         *
+         * @param {string} level
          * @param {string} line
          * @returns {void}
          */
         #appendLog(level, line) {
-            const entry = element('span', { class: 'log-line log-' + level, text: line + '\n' });
-            this.#log.append(entry);
-            this.#log.scrollTop = this.#log.scrollHeight;
+            const bounded = this.#boundedLog({ level, line });
+            this.#droppedOutput ||= bounded.truncated;
+            const text = bounded.line + '\n';
+            this.#pendingLogs.push({ level, text });
+            this.#pendingLogBytes += text.length * 2;
+            while (
+                this.#pendingLogs.length > MAX_PENDING_LINES ||
+                this.#pendingLogBytes > MAX_PENDING_BYTES
+            ) {
+                this.#pendingLogBytes -= this.#pendingLogs.shift().text.length * 2;
+                this.#droppedOutput = true;
+            }
+            this.#logTimer ??= globalObject.setTimeout(() => this.#flushLogs(), 16);
+        }
+
+        /**
+         * Flushes final output synchronously too; layout is read only once per batch.
+         *
+         * @returns {void}
+         */
+        #flushLogs() {
+            globalObject.clearTimeout(this.#logTimer);
+            this.#logTimer = undefined;
+            if (this.#pendingLogs.length === 0) {
+                this.#logNotice.hidden = !this.#droppedOutput;
+                return;
+            }
+            const isFollow =
+                this.#log.scrollHeight - this.#log.scrollTop - this.#log.clientHeight <= 48;
+            const fragment = globalObject.document.createDocumentFragment();
+            for (const { level, text } of this.#pendingLogs) {
+                const node = element('span', { class: 'log-line log-' + level, text });
+                this.#displayedLogs.push({ node, bytes: text.length * 2 });
+                this.#displayedLogBytes += text.length * 2;
+                fragment.append(node);
+            }
+            this.#pendingLogs = [];
+            this.#pendingLogBytes = 0;
+            while (
+                this.#displayedLogs.length > MAX_DISPLAY_LINES ||
+                this.#displayedLogBytes > MAX_DISPLAY_BYTES
+            ) {
+                const { node, bytes } = this.#displayedLogs.shift();
+                this.#displayedLogBytes -= bytes;
+                node.remove();
+                this.#droppedOutput = true;
+            }
+            this.#log.append(fragment);
+            this.#logNotice.hidden = !this.#droppedOutput;
+            if (isFollow) {
+                this.#log.scrollTop = this.#log.scrollHeight;
+            }
+        }
+
+        /**
+         * Cancels stale scheduled work and releases all retained output.
+         *
+         * @returns {void}
+         */
+        #clearLogs() {
+            globalObject.clearTimeout(this.#logTimer);
+            this.#logTimer = undefined;
+            this.#pendingLogs = [];
+            this.#pendingLogBytes = 0;
+            this.#displayedLogs = [];
+            this.#displayedLogBytes = 0;
+            this.#earlyLogBytes = 0;
+            this.#earlyLogCount = 0;
+            this.#droppedOutput = false;
+            this.#logNotice.hidden = true;
+            clear(this.#log);
         }
 
         /**
@@ -164,8 +278,29 @@
                     name,
                     (handler) =>
                         globalObject.mcdata[name]((payload) => {
+                            const isLog = name === 'onJobLog';
+                            if (isLog) {
+                                payload = this.#boundedLog(payload);
+                            }
                             if (this.#starting) {
-                                this.#pendingEvents.push(() => handler(payload));
+                                const bytes = isLog ? (payload.line.length + 1) * 2 : 0;
+                                this.#pendingEvents.push({ handler, payload, bytes, isLog });
+                                if (isLog) {
+                                    this.#earlyLogBytes += bytes;
+                                    this.#earlyLogCount++;
+                                    while (
+                                        this.#earlyLogCount > MAX_PENDING_LINES ||
+                                        this.#earlyLogBytes > MAX_PENDING_BYTES
+                                    ) {
+                                        const index = this.#pendingEvents.findIndex(
+                                            (event) => event.isLog,
+                                        );
+                                        const [removed] = this.#pendingEvents.splice(index, 1);
+                                        this.#earlyLogBytes -= removed.bytes;
+                                        this.#earlyLogCount--;
+                                        this.#droppedOutput = true;
+                                    }
+                                }
                             } else {
                                 handler(payload);
                             }
@@ -174,9 +309,12 @@
             );
             this.#unsubscribers.push(
                 mc.onJobLog((payload) => {
-                    if (payload.jobId === this.#jobId) {
-                        this.#appendLog(payload.level, payload.line);
+                    if (payload.jobId !== this.#jobId) {
+                        return;
                     }
+
+                    this.#droppedOutput ||= payload.truncated;
+                    this.#appendLog(payload.level, payload.line);
                 }),
                 mc.onJobProgress((payload) => {
                     if (payload.jobId !== this.#jobId) {
@@ -251,7 +389,7 @@
             if (this.isRunning) {
                 return;
             }
-            clear(this.#log);
+            this.#clearLogs();
             this.#setProgress(0);
             this.#status.textContent = 'Idle.';
             this.#cancelButton.setAttribute('disabled', 'true');
@@ -271,13 +409,14 @@
 
             this.#starting = true;
             this.#pendingEvents = [];
-            clear(this.#log);
+            this.#clearLogs();
             this.#setProgress(-1);
             this.#status.textContent = 'Starting…';
             this.#status.classList.remove('error');
 
             const outcome = new Promise((resolve) => {
                 this.#subscribe((result) => {
+                    this.#flushLogs();
                     this.#teardown();
                     this.#jobId = undefined;
                     this.#cancelButton.setAttribute('disabled', 'true');
@@ -293,8 +432,10 @@
                 this.#cancelButton.removeAttribute('disabled');
                 const events = this.#pendingEvents;
                 this.#pendingEvents = [];
-                for (const deliver of events) {
-                    deliver();
+                this.#earlyLogBytes = 0;
+                this.#earlyLogCount = 0;
+                for (const { handler, payload } of events) {
+                    handler(payload);
                 }
             } catch (ex) {
                 this.#teardown();

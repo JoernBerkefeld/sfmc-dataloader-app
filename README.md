@@ -21,6 +21,7 @@ If you've ever been handed instructions to "install Node, open a terminal, and r
 - **Handles very large Data Extensions** (multiple gigabytes) by streaming data straight to and from disk, so your computer doesn't run out of memory.
 - **Keeps you safe** with clear confirmations before anything destructive: you must type to confirm a "clear before import", you can automatically back up a Data Extension before overwriting it, and you get a heads-up before importing very large files.
 - **Shows live progress** with batch totals when available; streaming uploads without a known total show the current batch and an animated progress bar instead of a percentage.
+- **Keeps recent job output** without growing the log indefinitely. Older output can be discarded during bursts, and oversized lines are truncated; the panel shows a notice when this happens. Scroll up to read without being pulled back to the bottom; scroll near the bottom to resume following new output.
 - **Remembers your connections** so you don't re-enter credentials every time.
 - **Remembers your last project folder** so it's pre-selected the next time you open the app.
 

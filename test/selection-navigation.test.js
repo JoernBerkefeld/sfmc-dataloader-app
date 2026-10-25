@@ -293,6 +293,8 @@ test('router retains mounted runners and stable subscriptions over repeated and 
 
 test('real runner controls and job subscriptions survive navigation until terminal delivery', async () => {
     const { context, element, load } = setup();
+    context.setTimeout = setTimeout;
+    context.clearTimeout = clearTimeout;
     const events = new Map();
     for (const name of ['onJobLog', 'onJobProgress', 'onJobComplete', 'onJobError']) {
         events.set(name, new Set());
