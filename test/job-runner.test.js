@@ -235,6 +235,61 @@ function findCancelButton(root) {
     return controls && controls.firstElementChild;
 }
 
+test('start rejection is visible and startup prevents reentry', async () => {
+    const { runner, mcdata } = loadJobRunner();
+    const { promise, reject: rejectStart } = Promise.withResolvers();
+    mcdata.startJob = () => promise;
+    const pending = runner.start({ kind: 'export' });
+    assert.equal(runner.isRunning, true);
+    const rejected = await runner.start({ kind: 'export' });
+    assert.equal(rejected.ok, false);
+    runner.reset();
+    rejectStart(new Error('Another job is stopping'));
+    const outcome = await pending;
+    assert.equal(outcome.ok, false);
+    assert.equal(runner.isRunning, false);
+    const status = runner.element.children.find((node) => node.className === 'job-status muted');
+    assert.match(status.textContent, /Could not start: Another job is stopping/);
+});
+
+test('terminal and progress events before start acknowledgement are replayed once', async () => {
+    const { runner, mcdata } = loadJobRunner();
+    mcdata.startJob = async () => {
+        mcdata.emit('complete', { jobId: 'other', exitCode: 0 });
+        mcdata.emit('log', { jobId: 'job-1', level: 'info', line: 'early' });
+        mcdata.emit('progress', { jobId: 'job-1', event: { phase: 'exported', records: 10 } });
+        mcdata.emit('complete', { jobId: 'job-1', exitCode: 0 });
+        mcdata.emit('error', { jobId: 'job-1', message: 'late' });
+        return { jobId: 'job-1' };
+    };
+    const outcome = await runner.start({ kind: 'export' });
+    assert.equal(outcome.ok, true);
+    assert.equal(runner.isRunning, false);
+    const status = runner.element.children.find((node) => node.className === 'job-status muted');
+    assert.equal(status.textContent, 'Completed successfully.');
+});
+
+test('cancellation failure and delayed exit remain retryable without reporting completion', async () => {
+    const { runner, mcdata } = loadJobRunner();
+    const pending = runner.start({ kind: 'import' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    mcdata.cancelJob = async () => false;
+    await runner.cancel();
+    const status = runner.element.children.find((node) => node.className === 'job-status muted');
+    assert.match(status.textContent, /Could not stop worker/);
+    assert.equal(runner.isRunning, true);
+    assert.equal(findCancelButton(runner.element).getAttribute('disabled'), undefined);
+    mcdata.cancelJob = async () => true;
+    await runner.cancel();
+    assert.match(status.textContent, /still waiting for worker exit/);
+    assert.match(status.textContent, /not rollback/);
+    assert.equal(runner.isRunning, true);
+    mcdata.emit('complete', { jobId: 'job-1', cancelled: true });
+    const outcome = await pending;
+    assert.equal(outcome.cancelled, true);
+    assert.match(status.textContent, /may still finish remotely/);
+});
+
 test('a freshly constructed JobRunner is idle (regression: isRunning must be false)', () => {
     const { runner } = loadJobRunner();
     // Guard against the #jobId sentinel drift: the field starts as `undefined`,

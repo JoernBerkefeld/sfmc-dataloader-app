@@ -19,6 +19,7 @@ const { buildMcdataArgv } = require('../shared/build-argv.js');
 const { createJobRunner } = require('../shared/run-mcdata-job.js');
 
 const parentPort = process.parentPort;
+const state = { terminal: false, started: false };
 
 /**
  * Sends a structured message to the main process.
@@ -27,6 +28,12 @@ const parentPort = process.parentPort;
  * @returns {void}
  */
 function post(message) {
+    if (state.terminal) {
+        return;
+    }
+    if (message.type === 'complete' || message.type === 'error') {
+        state.terminal = true;
+    }
     parentPort.postMessage(message);
 }
 
@@ -39,7 +46,13 @@ const runJob = createJobRunner({
 
 parentPort.on('message', (event) => {
     const message = event.data;
-    if (message?.type === 'start' && message.job) {
+    // The parent acknowledges receipt of the terminal message before we exit.
+    if (state.terminal && message?.type === 'shutdown') {
+        // eslint-disable-next-line unicorn/no-process-exit -- One-job utility must stop live loader handles after terminal delivery is acknowledged.
+        process.exit(0);
+    }
+    if (!state.started && !state.terminal && message?.type === 'start' && message.job) {
+        state.started = true;
         runJob(message.job);
     }
 });

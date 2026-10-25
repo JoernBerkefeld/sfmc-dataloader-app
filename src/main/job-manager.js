@@ -42,7 +42,7 @@ class JobManager {
          */
         this._analytics = analytics;
         /**
-         * @type {Map<string, import('electron').UtilityProcess>}
+         * @type {Map<string, {child: import('electron').UtilityProcess, started: boolean, cancelling: boolean, outcome?: {channel: string, payload: object}}> }
          */
         this._jobs = new Map();
         /**
@@ -72,11 +72,15 @@ class JobManager {
      * @returns {void}
      */
     #handleWorkerMessage(jobId, job, message) {
+        const state = this._jobs.get(jobId);
+        if (!state || state.outcome || state.cancelling) {
+            return;
+        }
         switch (message?.type) {
             case 'ready': {
-                const child = this._jobs.get(jobId);
-                if (child) {
-                    child.postMessage({ type: 'start', job });
+                if (!state.started) {
+                    state.started = true;
+                    state.child.postMessage({ type: 'start', job });
                 }
                 break;
             }
@@ -94,22 +98,45 @@ class JobManager {
                 break;
             }
             case 'complete': {
-                this._jobs.delete(jobId);
-                this.#trackOutcome(jobId, message.exitCode === 0 ? 'success' : 'error');
-                this.#emit(CHANNELS.JOB_COMPLETE, { jobId, exitCode: message.exitCode });
+                state.outcome = {
+                    channel: CHANNELS.JOB_COMPLETE,
+                    payload: { jobId, exitCode: message.exitCode },
+                };
+                this.#requestShutdown(jobId, state);
                 break;
             }
             case 'error': {
-                this._jobs.delete(jobId);
-                this.#trackOutcome(jobId, 'error');
-                this.#emit(CHANNELS.JOB_ERROR, {
-                    jobId,
-                    message: message.message,
-                    stack: message.stack,
-                });
+                state.outcome = {
+                    channel: CHANNELS.JOB_ERROR,
+                    payload: {
+                        jobId,
+                        message: message.message,
+                        stack: message.stack,
+                    },
+                };
+                this.#requestShutdown(jobId, state);
                 break;
             }
             // no default — unknown message types are ignored on purpose
+        }
+    }
+
+    /**
+     * Acknowledges terminal delivery; keep the cancel control usable if IPC fails.
+     *
+     * @param {string} jobId
+     * @param {object} state
+     * @returns {void}
+     */
+    #requestShutdown(jobId, state) {
+        try {
+            state.child.postMessage({ type: 'shutdown' });
+        } catch {
+            this.#emit(CHANNELS.JOB_LOG, {
+                jobId,
+                level: 'warn',
+                line: 'Worker shutdown request failed. Use Cancel to stop it; no new job can start until it exits.',
+            });
         }
     }
 
@@ -229,12 +256,18 @@ class JobManager {
      * @returns {{ jobId: string }}
      */
     start(job) {
+        if (this._jobs.size > 0) {
+            throw new Error(
+                'A job is still starting, running or stopping. Wait for it to exit before starting a transfer or saving a connection.',
+            );
+        }
         const jobId = crypto.randomUUID();
         const child = utilityProcess.fork(WORKER_PATH, [], {
             serviceName: 'sfmc-dataloader-job',
             stdio: 'ignore',
         });
-        this._jobs.set(jobId, child);
+        const state = { child, started: false, cancelling: false, outcome: undefined };
+        this._jobs.set(jobId, state);
         this._jobMeta.set(jobId, { kind: job?.kind, peakRows: 0 });
         this.#trackJobStart(job);
 
@@ -243,20 +276,32 @@ class JobManager {
         });
 
         child.on('exit', (code) => {
-            // A non-zero exit without a prior complete/error means the worker
-            // died unexpectedly (e.g. OOM) or was cancelled.
-            if (!this._jobs.has(jobId)) {
+            if (this._jobs.get(jobId) !== state) {
                 return;
             }
-
             this._jobs.delete(jobId);
-            if (code !== 0) {
-                this.#trackOutcome(jobId, 'error');
-                this.#emit(CHANNELS.JOB_ERROR, {
-                    jobId,
-                    message: `Worker exited unexpectedly (code ${code}).`,
-                });
+            const outcome =
+                state.outcome ??
+                (state.cancelling
+                    ? { channel: CHANNELS.JOB_COMPLETE, payload: { jobId, cancelled: true } }
+                    : {
+                          channel: CHANNELS.JOB_ERROR,
+                          payload: {
+                              jobId,
+                              message: `Worker exited without a result (code ${code}).`,
+                          },
+                      });
+            let result = 'error';
+            if (outcome.payload.cancelled) {
+                result = 'cancelled';
+            } else if (
+                outcome.channel === CHANNELS.JOB_COMPLETE &&
+                outcome.payload.exitCode === 0
+            ) {
+                result = 'success';
             }
+            this.#trackOutcome(jobId, result);
+            this.#emit(outcome.channel, outcome.payload);
         });
 
         return { jobId };
@@ -266,17 +311,24 @@ class JobManager {
      * Cancels a running job by killing its worker process.
      *
      * @param {string} jobId
-     * @returns {boolean} true if a job was found and killed
+     * @returns {boolean} true if a stop request was accepted; ownership ends only on exit
      */
     cancel(jobId) {
-        const child = this._jobs.get(jobId);
-        if (!child) {
+        const state = this._jobs.get(jobId);
+        if (!state) {
             return false;
         }
-        this._jobs.delete(jobId);
-        child.kill();
-        this.#trackOutcome(jobId, 'cancelled');
-        this.#emit(CHANNELS.JOB_COMPLETE, { jobId, exitCode: undefined, cancelled: true });
+        const wasCancelling = state.cancelling;
+        state.cancelling = true;
+        try {
+            if (!state.child.kill()) {
+                state.cancelling = wasCancelling;
+                return false;
+            }
+        } catch (ex) {
+            state.cancelling = wasCancelling;
+            throw ex;
+        }
         return true;
     }
 
@@ -286,10 +338,9 @@ class JobManager {
      * @returns {void}
      */
     cancelAll() {
-        for (const child of this._jobs.values()) {
-            child.kill();
+        for (const jobId of this._jobs.keys()) {
+            this.cancel(jobId);
         }
-        this._jobs.clear();
     }
 }
 

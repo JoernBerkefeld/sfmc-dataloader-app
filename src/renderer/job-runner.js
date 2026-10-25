@@ -46,6 +46,8 @@
          * @type {string | undefined}
          */
         #jobId = undefined;
+        #starting = false;
+        #pendingEvents = [];
         /**
          * @type {() => void[]}
          */
@@ -157,7 +159,19 @@
          * @returns {void}
          */
         #subscribe(finish) {
-            const mc = globalObject.mcdata;
+            const mc = Object.fromEntries(
+                ['onJobLog', 'onJobProgress', 'onJobComplete', 'onJobError'].map((name) => [
+                    name,
+                    (handler) =>
+                        globalObject.mcdata[name]((payload) => {
+                            if (this.#starting) {
+                                this.#pendingEvents.push(() => handler(payload));
+                            } else {
+                                handler(payload);
+                            }
+                        }),
+                ]),
+            );
             this.#unsubscribers.push(
                 mc.onJobLog((payload) => {
                     if (payload.jobId === this.#jobId) {
@@ -184,12 +198,13 @@
                     }
                     this.#setProgress(1);
                     if (payload.cancelled) {
-                        this.#status.textContent = 'Cancelled.';
-                        toast('Job cancelled.', 'warn');
+                        this.#status.textContent =
+                            'Cancelled locally. Already accepted imports may still finish remotely; cancellation is not rollback.';
+                        toast(this.#status.textContent, 'warn');
                         finish({ ok: false, cancelled: true });
                         return;
                     }
-                    const isSucceeded = !payload.exitCode;
+                    const isSucceeded = payload.exitCode === 0;
                     this.#status.textContent = isSucceeded
                         ? 'Completed successfully.'
                         : `Finished with exit code ${payload.exitCode}.`;
@@ -224,7 +239,7 @@
          * @returns {boolean}
          */
         get isRunning() {
-            return this.#jobId !== undefined;
+            return this.#starting || this.#jobId !== undefined;
         }
 
         /**
@@ -233,6 +248,9 @@
          * @returns {void}
          */
         reset() {
+            if (this.isRunning) {
+                return;
+            }
             clear(this.#log);
             this.#setProgress(0);
             this.#status.textContent = 'Idle.';
@@ -247,10 +265,12 @@
          * @returns {Promise.<{ ok: boolean, exitCode?: number|null, cancelled?: boolean, error?: string }>}
          */
         async start(job) {
-            if (this.#jobId) {
+            if (this.isRunning) {
                 return { ok: false, error: 'A job is already running.' };
             }
 
+            this.#starting = true;
+            this.#pendingEvents = [];
             clear(this.#log);
             this.#setProgress(-1);
             this.#status.textContent = 'Starting…';
@@ -268,29 +288,60 @@
             try {
                 const result = await globalObject.mcdata.startJob(job);
                 this.#jobId = result.jobId;
+                this.#starting = false;
                 this.#status.textContent = 'Running…';
                 this.#cancelButton.removeAttribute('disabled');
+                const events = this.#pendingEvents;
+                this.#pendingEvents = [];
+                for (const deliver of events) {
+                    deliver();
+                }
             } catch (ex) {
                 this.#teardown();
                 this.#jobId = undefined;
-                return { ok: false, error: ex && ex.message ? ex.message : String(ex) };
+                this.#starting = false;
+                this.#pendingEvents = [];
+                const error = ex && ex.message ? ex.message : String(ex);
+                this.#setProgress(0);
+                this.#status.textContent = 'Could not start: ' + error;
+                this.#status.classList.add('error');
+                this.#cancelButton.setAttribute('disabled', 'true');
+                toast(this.#status.textContent, 'error');
+                return { ok: false, error };
             }
 
             return outcome;
         }
 
         /**
-         * Requests cancellation of the running job (if any).
+         * Requests cancellation of the running job (if any), retaining controls until exit.
          *
-         * @returns {void}
+         * @returns {Promise.<void>}
          */
-        cancel() {
+        async cancel() {
             if (!this.#jobId) {
                 return;
             }
+            const jobId = this.#jobId;
             this.#cancelButton.setAttribute('disabled', 'true');
-            this.#status.textContent = 'Cancelling…';
-            globalObject.mcdata.cancelJob(this.#jobId);
+            this.#status.textContent =
+                'Cancelling locally… Waiting for worker exit. Accepted imports may still finish remotely; cancellation is not rollback.';
+            try {
+                const accepted = await globalObject.mcdata.cancelJob(jobId);
+                if (this.#jobId !== jobId) {
+                    return;
+                }
+                this.#status.textContent = accepted
+                    ? 'Stop requested; still waiting for worker exit. You can retry Cancel. Accepted imports may still finish remotely; cancellation is not rollback.'
+                    : 'Could not stop worker. Retry Cancel; no new transfer can start until it exits.';
+            } catch (ex) {
+                if (this.#jobId !== jobId) {
+                    return;
+                }
+                this.#status.textContent =
+                    'Could not stop worker: ' + (ex?.message ?? String(ex)) + '. Retry Cancel.';
+            }
+            this.#cancelButton.removeAttribute('disabled');
         }
     }
 
