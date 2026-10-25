@@ -27,7 +27,7 @@ test('formatBytes renders binary units with sensible precision', () => {
 
 test('formatBytes is defensive against bad input', () => {
     assert.equal(formatBytes(-1), '0 B');
-    assert.equal(formatBytes(NaN), '0 B');
+    assert.equal(formatBytes(Number.NaN), '0 B');
     assert.equal(formatBytes('nope'), '0 B');
     assert.equal(formatBytes(Infinity), '0 B');
 });

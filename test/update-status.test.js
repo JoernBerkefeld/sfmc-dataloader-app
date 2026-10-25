@@ -14,7 +14,7 @@ test('clampPercent rounds and bounds to [0,100]', () => {
     assert.equal(clampPercent(42.6), 43);
     assert.equal(clampPercent(-5), 0);
     assert.equal(clampPercent(150), 100);
-    assert.equal(clampPercent(NaN), 0);
+    assert.equal(clampPercent(Number.NaN), 0);
     assert.equal(clampPercent('nope'), 0);
     // Non-finite input is treated as unknown → 0, never NaN in the UI.
     assert.equal(clampPercent(Infinity), 0);
