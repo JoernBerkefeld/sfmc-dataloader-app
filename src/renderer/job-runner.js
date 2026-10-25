@@ -22,7 +22,9 @@
                     : `Downloading… (${event.records ?? 0} records so far)`;
             }
             case 'upload': {
-                return `Uploading batch ${event.current}/${event.total}`;
+                return event.total
+                    ? `Uploading batch ${event.current}/${event.total}`
+                    : `Uploading batch ${event.current}`;
             }
             case 'exported': {
                 return `Exported ${event.records} rows`;
@@ -172,6 +174,8 @@
                     }
                     if (typeof payload.event.ratio === 'number') {
                         this.#setProgress(payload.event.ratio);
+                    } else if (['download', 'upload'].includes(payload.event.phase)) {
+                        this.#setProgress(-1);
                     }
                 }),
                 mc.onJobComplete((payload) => {

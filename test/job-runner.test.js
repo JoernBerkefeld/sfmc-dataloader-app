@@ -244,6 +244,41 @@ test('a freshly constructed JobRunner is idle (regression: isRunning must be fal
     assert.equal(runner.isRunning, false);
 });
 
+test('streaming upload replaces determinate download progress and supports legacy totals', async () => {
+    const { parseProgressLine } = require('../src/shared/parse-progress');
+    const { runner, mcdata } = loadJobRunner();
+    const pending = runner.start({ kind: 'import', deKeys: ['DE_1'] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const fill = runner.element.children[0].firstElementChild;
+    const status = runner.element.children[1];
+    const progress = (line) =>
+        mcdata.emit('progress', { jobId: 'job-1', event: parseProgressLine(line) });
+
+    progress('Downloading batch 3 of 4 (7500 records so far)');
+    assert.equal(fill.style.width, '75%');
+    assert.equal(fill.classList.contains('indeterminate'), false);
+    assert.equal(status.textContent, 'Downloading batch 3/4 (7500 records)');
+
+    progress('Uploading batch 1');
+    assert.equal(status.textContent, 'Uploading batch 1');
+    assert.equal(fill.classList.contains('indeterminate'), true);
+    assert.equal(fill.style.width, '40%', 'stale 75% fill must be replaced by animated width');
+
+    progress('Uploading batch 2');
+    assert.equal(status.textContent, 'Uploading batch 2');
+    assert.equal(fill.classList.contains('indeterminate'), true);
+
+    progress('Uploading batch 2 of 4');
+    assert.equal(status.textContent, 'Uploading batch 2/4');
+    assert.equal(fill.classList.contains('indeterminate'), false);
+    assert.equal(fill.style.width, '50%');
+
+    mcdata.emit('complete', { jobId: 'job-1', exitCode: 0 });
+    const outcome = await pending;
+    assert.equal(outcome.ok, true);
+});
+
 test('start() marks the runner running and enables the cancel button', async () => {
     const { runner, mcdata } = loadJobRunner();
 

@@ -17,7 +17,7 @@
 const PATTERNS = {
     downloadPaged: /Downloading batch (\d+) of (\d+) \((\d+) records so far\)/,
     downloadUnpaged: /Downloading next batch \(currently (\d+) records\)/,
-    upload: /Uploading batch (\d+) of (\d+)/,
+    upload: /Uploading batch (\d+)(?: of (\d+))?/,
     exported: /Exported: .* \((\d+) rows\)/,
     imported: /Imported: .* \((\d+) rows\)/,
     rowCountBefore: /Row count before import: (\d+)/,
@@ -69,7 +69,7 @@ function parseProgressLine(line) {
     const upload = PATTERNS.upload.exec(body);
     if (upload) {
         const current = Number(upload[1]);
-        const total = Number(upload[2]);
+        const total = upload[2] === undefined ? undefined : Number(upload[2]);
         return {
             phase: 'upload',
             current,

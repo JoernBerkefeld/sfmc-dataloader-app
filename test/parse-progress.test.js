@@ -30,6 +30,16 @@ test('parses upload batch with ratio', () => {
     assert.deepEqual(event, { phase: 'upload', current: 2, total: 4, ratio: 0.5 });
 });
 
+test('parses streaming upload batches without inventing a total or ratio', () => {
+    for (const line of ['17:04:12 info: Uploading batch 2', 'Uploading batch 12']) {
+        const event = parseProgressLine(line);
+        assert.equal(event.phase, 'upload');
+        assert.equal(event.current, line.endsWith('12') ? 12 : 2);
+        assert.equal(event.total, undefined);
+        assert.equal(event.ratio, undefined);
+    }
+});
+
 test('parses exported and imported row counts', () => {
     assert.deepEqual(parseProgressLine('17:04:12 info: Exported: "/data/DE.csv" (1234 rows)'), {
         phase: 'exported',
