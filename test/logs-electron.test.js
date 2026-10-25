@@ -11,18 +11,7 @@ test(
     'isolated Electron log burst rendering and scrolling evidence',
     { timeout: 60_000 },
     async () => {
-        const valid = (value) =>
-            typeof value === 'string' &&
-            path.isAbsolute(value) &&
-            path
-                .resolve(value)
-                .replace(/[\\/]+$/, '')
-                .toLowerCase() === String.raw`f:\temp`;
-        assert.ok(valid(process.env.TEMP) && valid(os.tmpdir()));
-        for (const name of ['TMP', 'TMPDIR']) {
-            const value = process.env[name];
-            assert.ok(!value || valid(value));
-        }
+        require('./fixtures/temporary-preflight').assertTemporaryEnvironment();
         // Retain isolated scratch for OS maintenance, without recursive deletion.
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcdata-logs-'));
         const environment = { ...process.env };

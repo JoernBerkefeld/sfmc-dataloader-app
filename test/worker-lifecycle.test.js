@@ -11,18 +11,7 @@ test(
     'Electron utility workers explicitly exit after successful and handled-error mocked work',
     { timeout: 60_000 },
     async () => {
-        const valid = (value) =>
-            typeof value === 'string' &&
-            path.isAbsolute(value) &&
-            path
-                .resolve(value)
-                .replace(/[\\/]+$/, '')
-                .toLowerCase() === String.raw`f:\temp`;
-        assert.ok(valid(process.env.TEMP) && valid(os.tmpdir()));
-        for (const name of ['TMP', 'TMPDIR']) {
-            const value = process.env[name];
-            assert.ok(!value || valid(value));
-        }
+        require('./fixtures/temporary-preflight').assertTemporaryEnvironment();
         // No recursive cleanup: leave this isolated run root for OS temp maintenance.
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcdata-lifecycle-'));
         const environment = { ...process.env };

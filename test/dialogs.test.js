@@ -11,18 +11,7 @@ test(
     'Native Electron dialogs protect frozen imports and keyboard consent',
     { timeout: 60_000 },
     async () => {
-        const valid = (value) =>
-            typeof value === 'string' &&
-            path.isAbsolute(value) &&
-            path
-                .resolve(value)
-                .replace(/[\\/]+$/, '')
-                .toLowerCase() === String.raw`f:\temp`;
-        assert.ok(valid(process.env.TEMP) && valid(os.tmpdir()));
-        for (const name of ['TMP', 'TMPDIR']) {
-            const value = process.env[name];
-            assert.ok(!value || valid(value));
-        }
+        require('./fixtures/temporary-preflight').assertTemporaryEnvironment();
         // Leave the isolated run root for OS temp maintenance; no recursive cleanup.
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcdata-dialogs-'));
         const environment = { ...process.env };

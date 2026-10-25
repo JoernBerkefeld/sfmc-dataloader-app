@@ -12,19 +12,7 @@ const { createJobRunner } = require('../src/shared/run-mcdata-job');
 
 // This file owns its fixtures; no live org credentials, writes, or network calls.
 // Retain the small run directory instead of recursively deleting an unregistered tree.
-for (const value of [process.env.TEMP, os.tmpdir(), process.env.TMP, process.env.TMPDIR]) {
-    if (!value) {
-        continue;
-    }
-    assert.ok(path.isAbsolute(value));
-    assert.equal(
-        path
-            .resolve(value)
-            .replace(/[\\/]+$/u, '')
-            .toLowerCase(),
-        String.raw`f:\temp`,
-    );
-}
+require('./fixtures/temporary-preflight').assertTemporaryEnvironment();
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcdata-app-integration-'));
 fs.writeFileSync(path.join(root, '.owner'), require('node:crypto').randomUUID());
 const fixtureRequire = process.env.SFMC_DATALOADER_FIXTURE
