@@ -2,99 +2,84 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const { loadConfig, fetchDeList } = require('../src/main/config-service');
 
-const configService = require('../src/main/config-service');
+const mcdevrc = {
+    credentials: {
+        MyOrg: { eid: 7_280_000, businessUnits: { Parent: 7_280_000, ChildA: 7_280_001 } },
+    },
+};
 
-/**
- * Writes a valid `.mcdatarc.json` / `.mcdata-auth.json` pair into a throwaway
- * project folder and returns its path. Mirrors the shape `mcdata init` writes
- * (see sfmc-dataloader/lib/init-project.mjs).
- *
- * @param {string} secret - the client secret to plant in the auth file
- * @returns {string} the temp project root
- */
-function makeProject(secret) {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcdata-app-'));
-    const rc = {
-        credentials: {
-            MyOrg: {
-                eid: 7_280_000,
-                businessUnits: { Parent: 7_280_000, ChildA: 7_280_001 },
+test('loadConfig awaits the public API and returns only credential/BU fields', async () => {
+    const secret = 'SECRET_SENTINEL';
+    const result = await loadConfig('synthetic-project', {
+        importDataloader: async () => ({
+            async loadPublicProjectConfig(root, { stderr }) {
+                assert.equal(root, 'synthetic-project');
+                assert.equal(typeof stderr, 'function');
+                await Promise.resolve();
+                return { mcdevrc, mcdevAuth: secret };
             },
-        },
-    };
-    const auth = {
-        MyOrg: {
-            client_id: 'cid-abc',
-            client_secret: secret,
-            auth_url: 'https://tenant.auth.marketingcloudapis.com/',
-            account_id: 7_280_000,
-        },
-    };
-    fs.writeFileSync(path.join(root, '.mcdatarc.json'), JSON.stringify(rc, undefined, 4), 'utf8');
-    fs.writeFileSync(
-        path.join(root, '.mcdata-auth.json'),
-        JSON.stringify(auth, undefined, 4),
-        'utf8',
-    );
-    return root;
-}
-
-test('loadConfig returns a sanitized credential/BU view and never leaks the secret', async () => {
-    const secret = 'super-secret-value';
-    const root = makeProject(secret);
-    try {
-        const result = await configService.loadConfig(root);
-        assert.equal(result.configured, true);
-        assert.equal(result.credentials.length, 1);
-
-        const cred = result.credentials[0];
-        assert.equal(cred.credential, 'MyOrg');
-        assert.equal(cred.eid, 7_280_000);
-        assert.deepEqual(
-            cred.businessUnits.map((bu) => bu.name).toSorted((a, b) => a.localeCompare(b)),
-            ['ChildA', 'Parent'],
-        );
-
-        // The whole serialized result must not contain the client secret.
-        assert.equal(JSON.stringify(result).includes(secret), false);
-    } finally {
-        fs.rmSync(root, { recursive: true, force: true });
-    }
+            loadProjectConfig() {
+                assert.fail('must never read auth contents');
+            },
+        }),
+    });
+    assert.deepEqual(result, {
+        configured: true,
+        credentials: [
+            {
+                credential: 'MyOrg',
+                eid: 7_280_000,
+                businessUnits: [
+                    { name: 'Parent', mid: 7_280_000 },
+                    { name: 'ChildA', mid: 7_280_001 },
+                ],
+            },
+        ],
+        message: '',
+    });
+    assert.equal(JSON.stringify(result).includes(secret), false);
 });
 
-test('loadConfig treats a missing config as a soft, first-run state', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcdata-app-empty-'));
-    try {
-        const result = await configService.loadConfig(root);
-        assert.equal(result.configured, false);
-        assert.deepEqual(result.credentials, []);
-        assert.ok(result.message.length > 0);
-    } finally {
-        fs.rmSync(root, { recursive: true, force: true });
-    }
+test('loadConfig fails closed on the released baseline without the additive API', async () => {
+    const result = await loadConfig('synthetic-project', {
+        importDataloader: async () => ({
+            loadProjectConfig() {
+                assert.fail('unsafe fallback');
+            },
+        }),
+    });
+    assert.equal(result.configured, false);
+    assert.deepEqual(result.credentials, []);
+    assert.match(result.message, /3\.2\.0.*pending/);
+});
+
+test('loadConfig treats public config errors as a soft first-run state', async () => {
+    const result = await loadConfig('synthetic-project', {
+        importDataloader: async () => ({
+            async loadPublicProjectConfig() {
+                throw new Error('No project config found');
+            },
+        }),
+    });
+    assert.equal(result.configured, false);
+    assert.deepEqual(result.credentials, []);
+    assert.match(result.message, /No project config/);
 });
 
 test('loadConfig rejects an empty project root', async () => {
-    await assert.rejects(() => configService.loadConfig(''), /project folder/i);
+    await assert.rejects(() => loadConfig(''), /project folder/i);
 });
 
 test('fetchDeList validates its inputs before authenticating', async () => {
-    const missingRoot = await configService.fetchDeList({ credential: 'MyOrg', bu: 'Parent' });
+    const missingRoot = await fetchDeList({ credential: 'MyOrg', bu: 'Parent' });
     assert.equal(missingRoot.ok, false);
     assert.match(missingRoot.error, /project folder/i);
-
-    const missingCred = await configService.fetchDeList({ projectRoot: '/tmp/x', bu: 'Parent' });
+    const missingCred = await fetchDeList({ projectRoot: '/tmp/x', bu: 'Parent' });
     assert.equal(missingCred.ok, false);
     assert.match(missingCred.error, /credential/i);
-
-    const missingBu = await configService.fetchDeList({
-        projectRoot: '/tmp/x',
-        credential: 'MyOrg',
-    });
+    const missingBu = await fetchDeList({ projectRoot: '/tmp/x', credential: 'MyOrg' });
     assert.equal(missingBu.ok, false);
     assert.match(missingBu.error, /business unit/i);
 });

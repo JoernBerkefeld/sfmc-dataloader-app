@@ -143,7 +143,20 @@ argv.
 ### Development
 
 Use Node.js `^22.22.2 || >=24.15.0` for development. The app bundles
-`sfmc-dataloader` `^3.1.0`; installed desktop apps need no separate Node.js install.
+`sfmc-dataloader` `^3.1.1` (lockfile baseline 3.1.1); installed desktop apps need no separate Node.js install.
+The released baseline preserves unsuccessful/unverified import outcomes and rejects
+ambiguous explicit file selections rather than retrying or dropping files.
+
+**Unreleased integration / distribution blocked:** connection listing now awaits
+`loadPublicProjectConfig(projectRoot, { stderr })`, which checks auth-file existence
+without reading its contents. This additive API is planned for loader 3.2.0 and is
+not included in registry 3.1.1. Until that release is adopted in the manifest and
+lockfile, listing returns an explicit dependency-pending message; it never falls
+back to the auth-reading `loadProjectConfig`. Do not distribute this intermediate
+tree. Integration tests accept `SFMC_DATALOADER_FIXTURE` pointing to an isolated
+npm-installed packed loader project; the config service accepts a test-only
+`loadConfig(root, { importDataloader })` module loader. Neither changes production
+module resolution or commits local dependency paths.
 
 ```bash
 npm ci --no-workspaces

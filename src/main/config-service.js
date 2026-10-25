@@ -50,15 +50,24 @@ function assertProjectRoot(value) {
  * friendly hint instead of an error.
  *
  * @param {string} projectRoot
+ * @param {{importDataloader?: () => Promise.<object>}} [options] - Test-only module injection.
  * @returns {Promise.<{configured: boolean, credentials: {credential: string, eid: (number | undefined), businessUnits: {name: string, mid: (number | string)}[]}[], message: string}>}
  */
-async function loadConfig(projectRoot) {
+async function loadConfig(projectRoot, { importDataloader = loadDataloader } = {}) {
     assertProjectRoot(projectRoot);
-    const dl = await loadDataloader();
     try {
+        const dl = await importDataloader();
+        if (typeof dl.loadPublicProjectConfig !== 'function') {
+            return {
+                configured: false,
+                credentials: [],
+                message:
+                    'Safe connection listing requires sfmc-dataloader 3.2.0. Dependency adoption is pending.',
+            };
+        }
         // Swallow the "mcdata superseded by mcdev" notice — it is informational
         // and would otherwise be logged to the main process console.
-        const { mcdevrc } = dl.loadProjectConfig(projectRoot, { stderr: () => {} });
+        const { mcdevrc } = await dl.loadPublicProjectConfig(projectRoot, { stderr: () => {} });
         const credentials = Object.entries(mcdevrc.credentials ?? {}).map(
             ([credential, block]) => ({
                 credential,

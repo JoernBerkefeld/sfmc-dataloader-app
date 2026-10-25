@@ -477,6 +477,24 @@ test('streaming upload replaces determinate download progress and supports legac
     assert.equal(outcome.ok, true);
 });
 
+test('nonzero unverified completion never displays success', async () => {
+    const { runner, mcdata } = loadJobRunner();
+    const pending = runner.start({ kind: 'import' });
+    await new Promise((resolve) => setImmediate(resolve));
+    mcdata.emit('log', {
+        jobId: 'job-1',
+        level: 'warn',
+        line: 'Import completion is unverified; submitted work may still run remotely. No rollback occurred.',
+    });
+    mcdata.emit('complete', { jobId: 'job-1', exitCode: 1 });
+    const outcome = await pending;
+    assert.equal(outcome.ok, false);
+    assert.equal(outcome.exitCode, 1);
+    const status = runner.element.children.find((node) => node.className === 'job-status muted');
+    assert.equal(status.textContent, 'Finished with exit code 1.');
+    assert.equal(runner.isRunning, false);
+});
+
 test('start() marks the runner running and enables the cancel button', async () => {
     const { runner, mcdata } = loadJobRunner();
 
