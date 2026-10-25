@@ -155,16 +155,26 @@
     }
 
     /**
-     * Renders the blocking first-run consent modal. Resolves once the user picks
-     * an option (either choice is persisted).
+     * Renders the first-run native modal. A choice is persisted; Escape leaves
+     * consent undecided. Resolves after dismissal or saving the selected option.
      *
      * @returns {Promise.<void>}
      */
     function showConsentModal() {
         return new Promise((resolve) => {
-            const overlay = element('div', { class: 'modal-overlay' });
-            const dialog = element('div', { class: 'modal' });
-            dialog.append(element('h2', { text: 'Help improve SFMC Data Loader' }));
+            const previousFocus = document.activeElement;
+            const dialog = /** @type {HTMLDialogElement} */ (
+                element('dialog', {
+                    class: 'modal',
+                    attrs: { 'aria-labelledby': 'consent-title' },
+                })
+            );
+            dialog.append(
+                element('h2', {
+                    text: 'Help improve SFMC Data Loader',
+                    attrs: { id: 'consent-title' },
+                }),
+            );
             dialog.append(buildExplainer());
 
             const actions = element('div', { class: 'modal-actions' });
@@ -172,23 +182,44 @@
             const yesButton = button('Enable usage statistics');
             actions.append(noButton, yesButton);
             dialog.append(actions);
-            overlay.append(dialog);
-            document.body.append(overlay);
+            document.body.append(dialog);
+            let isChoosing = false;
+            dialog.addEventListener('cancel', (event) => {
+                if (isChoosing) {
+                    event.preventDefault();
+                }
+            });
+            dialog.addEventListener(
+                'close',
+                () => {
+                    dialog.remove();
+                    if (previousFocus?.isConnected) {
+                        previousFocus.focus();
+                    }
+                    resolve();
+                },
+                { once: true },
+            );
 
             /**
              * @param {boolean} value
              * @returns {Promise.<void>}
              */
             const choose = async (value) => {
+                if (isChoosing) {
+                    return;
+                }
+                isChoosing = true;
                 noButton.disabled = true;
                 yesButton.disabled = true;
                 await saveConsent(value);
-                overlay.remove();
-                resolve();
+                dialog.close();
             };
 
             noButton.addEventListener('click', () => choose(false));
             yesButton.addEventListener('click', () => choose(true));
+            dialog.showModal();
+            noButton.focus();
         });
     }
 

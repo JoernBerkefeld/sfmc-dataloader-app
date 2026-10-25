@@ -523,15 +523,23 @@ textarea:focus {
     font-size: 12px;
 }
 
-.modal-overlay {
-    position: fixed;
-    inset: 0;
+.modal::backdrop {
     background: rgb(0 0 0 / 60%);
+}
+
+.modal:not([open]) {
+    display: none;
+}
+
+.confirmation-form {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 2000;
-    padding: 24px;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.modal pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .modal {

@@ -21,20 +21,92 @@
     }
 
     /**
-     * Requires the user to type the exact DE key(s) to unlock a clear-before-import.
-     * Returns true only when the confirmation text matches.
+     * Confirms only the frozen job displayed in a native, keyboard-modal dialog.
      *
-     * @param {string[]} deKeys
-     * @returns {boolean}
+     * @param {object} job
+     * @returns {Promise.<boolean>}
      */
-    function confirmClear(deKeys) {
-        const expected = deKeys.join(', ');
-        const answer = globalObject.prompt(
-            'This will DELETE ALL ROWS in the target Data Extension(s) before import.\n\n' +
-                'Type the target key(s) exactly to confirm:\n' +
-                expected,
-        );
-        return answer !== null && answer.trim() === expected;
+    function confirmClear(job) {
+        return new Promise((resolve) => {
+            const previousFocus = document.activeElement;
+            const dialog = /** @type {HTMLDialogElement} */ (
+                element('dialog', {
+                    class: 'modal',
+                    attrs: {
+                        'aria-labelledby': 'clear-title',
+                        'aria-describedby': 'clear-targets',
+                    },
+                })
+            );
+            const expected = job.deKeys ? job.deKeys.join(', ') : 'CLEAR';
+            const summary = [
+                'Target Business Unit(s): ' + (job.to || [job.source]).join(', '),
+                job.from ? 'Source Business Unit: ' + job.from : '',
+                job.deKeys ? 'DE key(s): ' + expected : 'Files: ' + job.filePaths.join(', '),
+            ]
+                .filter(Boolean)
+                .join('\n');
+            const input = /** @type {HTMLInputElement} */ (
+                element('input', { attrs: { id: 'clear-answer', autocomplete: 'off' } })
+            );
+            const form = element('form', { class: 'confirmation-form' });
+            const cancel = button('Cancel', { variant: 'btn-secondary' });
+            const authorize = button('Clear and import');
+            cancel.type = 'button';
+            authorize.type = 'submit';
+            authorize.disabled = true;
+            const isMatch = () => expected.trim().length > 0 && input.value === expected;
+            input.addEventListener('input', () => {
+                authorize.disabled = !isMatch();
+            });
+            const actions = element('div', { class: 'modal-actions' });
+            actions.append(cancel, authorize);
+            form.append(
+                element('label', {
+                    text: 'Type exactly to confirm: ' + expected,
+                    attrs: { for: 'clear-answer' },
+                }),
+                input,
+                actions,
+            );
+            dialog.append(
+                element('h2', {
+                    text: 'Clear all rows before import?',
+                    attrs: { id: 'clear-title' },
+                }),
+                element('p', {
+                    text: 'This will DELETE ALL ROWS in the target Data Extension(s).',
+                }),
+                element('pre', { text: summary, attrs: { id: 'clear-targets' } }),
+                form,
+            );
+            let isAuthorized = false;
+            form.addEventListener('submit', (event) => {
+                event.preventDefault();
+                if (isMatch()) {
+                    isAuthorized = true;
+                    dialog.close();
+                }
+            });
+            cancel.addEventListener('click', () => dialog.close());
+            dialog.addEventListener('cancel', () => {
+                isAuthorized = false;
+            });
+            dialog.addEventListener(
+                'close',
+                () => {
+                    dialog.remove();
+                    if (previousFocus?.isConnected) {
+                        previousFocus.focus();
+                    }
+                    resolve(isAuthorized);
+                },
+                { once: true },
+            );
+            document.body.append(dialog);
+            dialog.showModal();
+            input.focus();
+        });
     }
 
     /**
@@ -152,29 +224,38 @@
             applyMode();
         });
 
+        let isSubmitting = false;
         runButton.addEventListener('click', async () => {
-            if (runner.isRunning) {
+            if (isSubmitting || runner.isRunning) {
                 return;
             }
-            let job;
+            isSubmitting = true;
             try {
-                job = buildJob();
-            } catch (ex) {
-                toast(ex && ex.message ? ex.message : String(ex), 'error');
-                return;
-            }
-            if (job.clearBeforeImport && !confirmClear(job.deKeys || [])) {
-                toast('Clear-before-import cancelled — confirmation did not match.', 'warn');
-                return;
-            }
-            if (!confirmLargeFiles(job)) {
-                toast('Import cancelled.', 'warn');
-                return;
-            }
-            runButton.setAttribute('disabled', 'true');
-            try {
+                let job;
+                try {
+                    job = buildJob();
+                    for (const value of Object.values(job)) {
+                        if (Array.isArray(value)) {
+                            Object.freeze(value);
+                        }
+                    }
+                    Object.freeze(job);
+                } catch (ex) {
+                    toast(ex && ex.message ? ex.message : String(ex), 'error');
+                    return;
+                }
+                if (job.clearBeforeImport && !(await confirmClear(job))) {
+                    toast('Clear-before-import cancelled — confirmation did not match.', 'warn');
+                    return;
+                }
+                if (!confirmLargeFiles(job)) {
+                    toast('Import cancelled.', 'warn');
+                    return;
+                }
+                runButton.setAttribute('disabled', 'true');
                 await runner.start(job);
             } finally {
+                isSubmitting = false;
                 runButton.removeAttribute('disabled');
             }
         });
@@ -198,7 +279,7 @@
                 job.projectRoot = projectRoot;
             }
 
-            const selectedFiles = files.getFiles();
+            const selectedFiles = [...files.getFiles()];
 
             if (mode === 'singleDe' || mode === 'singleFile') {
                 const target = targetPicker.getValue();
@@ -208,7 +289,7 @@
                 job.kind = JOB_KIND.IMPORT;
                 job.source = target;
                 if (mode === 'singleDe') {
-                    job.deKeys = deSelector.getKeys();
+                    job.deKeys = [...deSelector.getKeys()];
                 } else {
                     if (selectedFiles.length === 0) {
                         throw new Error('Select at least one file to import.');
@@ -231,7 +312,7 @@
                     throw new Error('Choose a source credential/BU.');
                 }
                 job.from = from;
-                job.deKeys = deSelector.getKeys();
+                job.deKeys = [...deSelector.getKeys()];
             } else {
                 if (selectedFiles.length === 0) {
                     throw new Error('Select at least one file to import.');

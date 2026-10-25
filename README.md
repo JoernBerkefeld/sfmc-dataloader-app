@@ -43,6 +43,11 @@ The app window itself is locked down (sandboxed with a strict security policy) a
 3. Go to **Connections**, enter your Marketing Cloud API credentials, and let the app list your Business Units.
 4. Switch to **Export** or **Import** and go.
 
+Before clearing rows, the confirmation dialog lists the target Business Units and
+DE keys or files. Type the displayed DE keys exactly (including separators), or
+`CLEAR` for file imports. Cancel or Escape leaves the import unstarted; changes
+to the selection do not change the job already shown in the dialog.
+
 On the **Import** screen, **Skip empty lines (CSV/TSV)** is unchecked by default.
 Enable it to ignore unquoted blank or whitespace-only records in CSV/TSV files,
 including Data Extension export files and cross-BU file imports. It leaves values
@@ -83,6 +88,9 @@ company data.** Full details are in **[PRIVACY.md](PRIVACY.md)**.
 - App install, update, and launch events — to count active installs.
 - App version, operating system + version, CPU architecture, and how the app was
   installed (e.g. NSIS, dmg, AppImage, snap, Flatpak).
+
+The first-run consent dialog initially focuses **No thanks**. Escape dismisses it
+without choosing or enabling optional telemetry; you can decide later in **Settings**.
 
 **Only if you opt in** (first-run prompt, or the **Settings** tab):
 
