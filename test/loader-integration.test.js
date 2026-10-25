@@ -34,7 +34,33 @@ const entry = fixtureRequire.resolve('sfmc-dataloader');
 const packageRoot = path.resolve(path.dirname(entry), '..');
 const identity = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
 assert.equal(identity.name, 'sfmc-dataloader');
-assert.equal(identity.version, '3.1.1');
+if (process.env.SFMC_DATALOADER_FIXTURE) {
+    const fixtureManifest = fixtureRequire('./package.json');
+    assert.equal(
+        fixtureManifest.dependencies['sfmc-dataloader'],
+        `file:sfmc-dataloader-${identity.version}.tgz`,
+        'packed fixture must install its explicitly declared loader tarball',
+    );
+} else {
+    const manifest = require('../package.json');
+    const lock = require('../package-lock.json');
+    assert.equal(
+        lock.packages[''].dependencies['sfmc-dataloader'],
+        manifest.dependencies['sfmc-dataloader'],
+        'app manifest and lockfile must agree on the intended loader dependency',
+    );
+    assert.equal(
+        identity.version,
+        lock.packages['node_modules/sfmc-dataloader'].version,
+        'installed loader must match the app lockfile',
+    );
+}
+const dependencyProject = process.env.SFMC_DATALOADER_FIXTURE || path.join(__dirname, '..');
+assert.equal(
+    fs.realpathSync(packageRoot),
+    fs.realpathSync(path.join(dependencyProject, 'node_modules/sfmc-dataloader')),
+    'loader must resolve from the intended project, not an ancestor dependency',
+);
 
 registerHooks({
     resolve(specifier, context, nextResolve) {
@@ -93,18 +119,21 @@ test('package-root public API integration is safe or explicitly distribution-blo
     t.diagnostic(
         `loader ${identity.version}; entry ${entry}; public API ${typeof dl.loadPublicProjectConfig}`,
     );
-    if (!process.env.SFMC_DATALOADER_FIXTURE) {
-        assert.equal(
-            typeof dl.loadPublicProjectConfig,
-            'undefined',
-            '3.1.1 does not contain the upcoming API',
-        );
+    if (
+        !process.env.SFMC_DATALOADER_FIXTURE &&
+        identity.version === '3.1.1' &&
+        dl.loadPublicProjectConfig === undefined
+    ) {
+        // Only the known released staging baseline may lack the additive API.
         const result = await loadConfig(root);
         assert.equal(result.configured, false);
         assert.match(result.message, /3\.2\.0.*pending/);
         return;
     }
     assert.equal(typeof dl.loadPublicProjectConfig, 'function');
+    const configOptions = process.env.SFMC_DATALOADER_FIXTURE
+        ? { importDataloader: () => loader }
+        : undefined;
     const read = fs.promises.readFile.bind(fs.promises);
     const reads = [];
     t.mock.method(fs.promises, 'readFile', async (file, ...arguments_) => {
@@ -113,7 +142,7 @@ test('package-root public API integration is safe or explicitly distribution-blo
     });
     // Malformed auth proves listing does not parse it; record reads to prove no auth read at all.
     fs.writeFileSync(path.join(root, '.mcdata-auth.json'), secret);
-    const result = await loadConfig(root, { importDataloader: () => loader });
+    const result = await loadConfig(root, configOptions);
     assert.equal(result.configured, true);
     assert.deepEqual(result.credentials[0].businessUnits, [{ name: 'B', mid: 123 }]);
     assert.equal(
@@ -121,7 +150,7 @@ test('package-root public API integration is safe or explicitly distribution-blo
         false,
     );
     fs.writeFileSync(path.join(root, '.mcdatarc.json'), `{"secret":"${secret}", INVALID`);
-    const invalid = await loadConfig(root, { importDataloader: () => loader });
+    const invalid = await loadConfig(root, configOptions);
     assert.equal(invalid.configured, false);
     assert.match(invalid.message, /Invalid JSON in \.mcdatarc\.json/);
     assert.equal(JSON.stringify(invalid).includes(secret), false);
