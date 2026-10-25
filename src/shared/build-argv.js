@@ -20,6 +20,7 @@ const { JOB_KIND } = require('./channels');
  * @property {boolean} [backupBeforeImport] - true → `--backup-before-import`,
  * false → `--no-backup-before-import`, undefined → neither
  * @property {boolean} [clearBeforeImport] - SOAP ClearData before import
+ * @property {boolean} [skipEmptyLines] - skip unquoted blank CSV/TSV import records
  * @property {boolean} [debug] - write API debug logs (`--debug`)
  * @property {string} [credential] - init: credential name (`--credential`)
  * @property {string} [clientId] - init: installed-package client_id (`--client-id`)
@@ -121,6 +122,13 @@ function appendImportFlags(argv, job) {
     }
     if (job.clearBeforeImport) {
         argv.push('--clear-before-import', '--i-accept-clear-data-risk');
+    }
+    // File imports infer their format per file; JSON parsing ignores this flag.
+    const hasDelimitedInput =
+        job.format !== 'json' &&
+        (job.filePaths ? job.filePaths.some((filePath) => /\.(?:csv|tsv)$/i.test(filePath)) : true);
+    if (hasDelimitedInput && !job.from && job.skipEmptyLines === true) {
+        argv.push('--skip-empty-lines');
     }
 }
 

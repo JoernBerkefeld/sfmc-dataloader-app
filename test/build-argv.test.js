@@ -279,6 +279,39 @@ test('rejects invalid format and non-positive maxRowsPerFile', () => {
     );
 });
 
+test('skipEmptyLines is opt-in for CSV/TSV imports and excluded elsewhere', () => {
+    const single = { kind: JOB_KIND.IMPORT, source: 'Org/BU', deKeys: ['DE'] };
+    const cross = { kind: JOB_KIND.IMPORT_CROSS_BU, to: ['Org/BU'] };
+    for (const skipEmptyLines of [undefined, false, true, 'true']) {
+        assert.equal(
+            buildMcdataArgv({ ...single, skipEmptyLines }).includes('--skip-empty-lines'),
+            skipEmptyLines === true,
+        );
+    }
+    for (const job of [
+        { ...single, format: 'csv' },
+        { ...single, format: 'tsv' },
+        { ...single, deKeys: undefined, filePaths: ['data.CSV'] },
+        { ...cross, filePaths: ['data.tsv'] },
+        { ...cross, filePaths: ['data.json', 'data.csv'] },
+    ]) {
+        assert.ok(buildMcdataArgv({ ...job, skipEmptyLines: true }).includes('--skip-empty-lines'));
+    }
+    for (const job of [
+        { ...single, format: 'json' },
+        { ...single, deKeys: undefined, filePaths: ['data.json'] },
+        { ...cross, filePaths: ['data.json'] },
+        { ...cross, from: 'Org/Source', deKeys: ['DE'] },
+        { ...single, kind: JOB_KIND.EXPORT },
+        { kind: JOB_KIND.EXPORT_MULTI_BU, sources: ['Org/BU'], deKeys: ['DE'] },
+    ]) {
+        assert.equal(
+            buildMcdataArgv({ ...job, skipEmptyLines: true }).includes('--skip-empty-lines'),
+            false,
+        );
+    }
+});
+
 test('rejects unknown job kind', () => {
     assert.throws(() => buildMcdataArgv({ kind: 'frobnicate' }), /Unsupported job kind/);
 });

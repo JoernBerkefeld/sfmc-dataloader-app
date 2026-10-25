@@ -43,6 +43,12 @@ The app window itself is locked down (sandboxed with a strict security policy) a
 3. Go to **Connections**, enter your Marketing Cloud API credentials, and let the app list your Business Units.
 4. Switch to **Export** or **Import** and go.
 
+On the **Import** screen, **Skip empty lines (CSV/TSV)** is unchecked by default.
+Enable it to ignore unquoted blank or whitespace-only records in CSV/TSV files,
+including Data Extension export files and cross-BU file imports. It leaves values
+unchanged: quoted empty cells, delimiter-only rows, and blank lines inside quoted
+fields remain data. JSON imports, API copies, and exports are unaffected.
+
 > **Note on macOS:** until code-signing certificates are configured, macOS builds are **unsigned**. You may need to right-click the app and choose *Open* the first time to get past Gatekeeper.
 
 ### Or install with a package manager
@@ -126,6 +132,9 @@ process and the job worker. Credentials are written to the standalone `.mcdatarc
 argv.
 
 ### Development
+
+Use Node.js `^22.22.2 || >=24.15.0` for development. The app bundles
+`sfmc-dataloader` `^3.1.0`; installed desktop apps need no separate Node.js install.
 
 ```bash
 npm ci --no-workspaces

@@ -94,6 +94,7 @@
 
         const backup = checkbox('Backup Data Extension before import', true);
         const clear = checkbox('Clear all rows before import (destructive)', false);
+        const skipEmptyLines = checkbox('Skip empty lines (CSV/TSV)', false);
 
         const runButton = button('Start import');
         const controls = element('div', { class: 'form-actions' });
@@ -136,6 +137,7 @@
             fromPicker.element.style.display = mode === 'crossApi' ? '' : 'none';
             deSelector.element.style.display = isUsesDe ? '' : 'none';
             filesField.style.display = isUsesFiles ? '' : 'none';
+            skipEmptyLines.wrap.style.display = mode === 'crossApi' ? 'none' : '';
         }
         modeSelect.addEventListener('change', applyMode);
 
@@ -179,6 +181,7 @@
                 mode: writeMode.value,
                 backupBeforeImport: backup.input.checked,
                 clearBeforeImport: clear.input.checked,
+                skipEmptyLines: mode !== 'crossApi' && skipEmptyLines.input.checked,
             };
             if (projectRoot) {
                 job.projectRoot = projectRoot;
@@ -228,7 +231,7 @@
         }
 
         const optionsRow = element('div', { class: 'form-row' });
-        optionsRow.append(backup.wrap, clear.wrap);
+        optionsRow.append(backup.wrap, clear.wrap, skipEmptyLines.wrap);
 
         root.append(
             modeField,

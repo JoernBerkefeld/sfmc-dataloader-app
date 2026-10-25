@@ -116,7 +116,7 @@ test('sanitizeParams keeps only primitives and caps string length', () => {
         // eslint-disable-next-line unicorn/no-null -- deliberately verifying null is dropped by the firewall
         drop_null: null,
         drop_undefined: undefined,
-        drop_nan: Number.NaN,
+        drop_nan: NaN,
         long_string: long,
     });
     assert.deepEqual(

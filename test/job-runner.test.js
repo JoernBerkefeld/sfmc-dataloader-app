@@ -250,7 +250,8 @@ test('streaming upload replaces determinate download progress and supports legac
     const pending = runner.start({ kind: 'import', deKeys: ['DE_1'] });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const fill = runner.element.children[0].firstElementChild;
+    const fill = runner.element.firstElementChild.firstElementChild;
+    // eslint-disable-next-line unicorn/better-dom-traversing -- FakeNode exposes children, not DOM selectors.
     const status = runner.element.children[1];
     const progress = (line) =>
         mcdata.emit('progress', { jobId: 'job-1', event: parseProgressLine(line) });
