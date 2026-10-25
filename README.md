@@ -49,6 +49,12 @@ DE keys or files. Type the displayed DE keys exactly (including separators), or
 `CLEAR` for file imports. Cancel or Escape leaves the import unstarted; changes
 to the selection do not change the job already shown in the dialog.
 
+Only one transfer or connection-save job can run at a time. Switching screens
+keeps the active transfer visible; it does not start another job. **Cancel**
+requests that the worker stop, and the app waits for its actual exit before
+allowing another job. If stopping fails, you can retry Cancel. Cancellation does
+not undo rows already written or restore rows cleared before an import.
+
 On the **Import** screen, **Skip empty lines (CSV/TSV)** is unchecked by default.
 Enable it to ignore unquoted blank or whitespace-only records in CSV/TSV files,
 including Data Extension export files and cross-BU file imports. It leaves values
@@ -143,20 +149,17 @@ argv.
 ### Development
 
 Use Node.js `^22.22.2 || >=24.15.0` for development. The app bundles
-`sfmc-dataloader` `^3.1.1` (lockfile baseline 3.1.1); installed desktop apps need no separate Node.js install.
-The released baseline preserves unsuccessful/unverified import outcomes and rejects
+`sfmc-dataloader` `^3.2.0` (lockfile baseline 3.2.0); installed desktop apps need no separate Node.js install.
+The loader preserves unsuccessful/unverified import outcomes and rejects
 ambiguous explicit file selections rather than retrying or dropping files.
 
-**Unreleased integration / distribution blocked:** connection listing now awaits
-`loadPublicProjectConfig(projectRoot, { stderr })`, which checks auth-file existence
-without reading its contents. This additive API is planned for loader 3.2.0 and is
-not included in registry 3.1.1. Until that release is adopted in the manifest and
-lockfile, listing returns an explicit dependency-pending message; it never falls
-back to the auth-reading `loadProjectConfig`. Do not distribute this intermediate
-tree. Integration tests accept `SFMC_DATALOADER_FIXTURE` pointing to an isolated
-npm-installed packed loader project; the config service accepts a test-only
-`loadConfig(root, { importDataloader })` module loader. Neither changes production
-module resolution or commits local dependency paths.
+Connection listing uses the loader's released
+`loadPublicProjectConfig(projectRoot, { stderr })` API, which checks auth-file
+existence without reading its contents. It never falls back to the auth-reading
+`loadProjectConfig`. Integration tests exercise the actual installed registry
+dependency by default, including malformed-auth and secret-redaction regressions.
+For isolated packed-loader development, tests also accept
+`SFMC_DATALOADER_FIXTURE`; this does not change production module resolution.
 
 ```bash
 npm ci --no-workspaces

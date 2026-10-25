@@ -114,21 +114,13 @@ async function run(selection) {
     return messages;
 }
 
-test('package-root public API integration is safe or explicitly distribution-blocked', async (t) => {
+test('adopted package-root public API lists connections without reading auth', async (t) => {
     const dl = await loader;
     t.diagnostic(
         `loader ${identity.version}; entry ${entry}; public API ${typeof dl.loadPublicProjectConfig}`,
     );
-    if (
-        !process.env.SFMC_DATALOADER_FIXTURE &&
-        identity.version === '3.1.1' &&
-        dl.loadPublicProjectConfig === undefined
-    ) {
-        // Only the known released staging baseline may lack the additive API.
-        const result = await loadConfig(root);
-        assert.equal(result.configured, false);
-        assert.match(result.message, /3\.2\.0.*pending/);
-        return;
+    if (!process.env.SFMC_DATALOADER_FIXTURE) {
+        assert.equal(require('../package.json').dependencies['sfmc-dataloader'], '^3.2.0');
     }
     assert.equal(typeof dl.loadPublicProjectConfig, 'function');
     const configOptions = process.env.SFMC_DATALOADER_FIXTURE
