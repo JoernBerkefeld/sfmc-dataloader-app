@@ -16,7 +16,7 @@
 // path.
 
 /**
- * Files at or above this many bytes trigger a blocking confirmation. 1 GiB.
+ * Files at or above this many bytes trigger an informational advisory. 1 GiB.
  */
 const LARGE_FILE_WARN_BYTES = 1024 * 1024 * 1024;
 
@@ -96,9 +96,9 @@ function summarizeFiles(files) {
 }
 
 /**
- * Builds the confirmation message shown before starting an import that includes
- * one or more very large files. Returns an empty string when no confirmation is
- * needed (no file crosses the threshold).
+ * Builds the advisory shown before starting an import that includes one or more
+ * very large files. Returns an empty string when no advisory is needed (no file
+ * reaches the threshold).
  *
  * @param {SizedFile[]} files
  * @returns {string}
@@ -113,9 +113,8 @@ function buildLargeFileWarning(files) {
     return (
         `You are about to import ${summary.count} file(s) totalling ${total} ` +
         `(largest ${biggest}).\n\n` +
-        'Large imports stream to Marketing Cloud in batches and can take a long ' +
-        'time. Keep this app open and stay connected until the job finishes.\n\n' +
-        'Continue?'
+        'Large imports can take a long time. ' +
+        'Keep this app open and stay connected until the job finishes.'
     );
 }
 

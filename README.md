@@ -84,8 +84,11 @@ require matching local export files.
 
 File imports show every selected file with **Remove** and **Clear files** controls.
 Browsing replaces the selection; cancelling the picker preserves it. A file of
-**1 GiB or larger** triggers a warning before import; keep the app open and stay
-connected. Removing a file from the selection does not delete it from disk.
+**1 GiB or larger** triggers a separate informational notice: **Large imports can
+take a long time.** It has only **OK**; dismissing it continues without cancelling
+the import. Any subsequent destructive confirmation remains independently
+cancellable. The threshold applies per file, not to their combined size.
+Removing a file from the selection does not delete it from disk.
 
 Export's **Max rows per file** accepts a positive safe whole number, or blank for
 unsplit output. Invalid input is labelled inline and prevents submission.

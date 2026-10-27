@@ -71,7 +71,20 @@ test('buildLargeFileWarning only warns when a file crosses the threshold', () =>
         { path: 'big.csv', size: 3 * GB },
         { path: 'small.csv', size: 5 * MB },
     ]);
-    assert.match(message, /import 2 file\(s\)/);
-    assert.match(message, /largest 3\.00 GB/);
-    assert.match(message, /Continue\?/);
+    assert.equal(
+        message,
+        'You are about to import 2 file(s) totalling 3.00 GB (largest 3.00 GB).\n\n' +
+            'Large imports can take a long time. ' +
+            'Keep this app open and stay connected until the job finishes.',
+    );
+    assert.doesNotMatch(message, /Continue\?|stream/i);
+    assert.ok(buildLargeFileWarning([{ path: 'edge.csv', size: LARGE_FILE_WARN_BYTES }]));
+    assert.equal(buildLargeFileWarning([{ path: 'below.csv', size: GB - 1 }]), '');
+    assert.equal(
+        buildLargeFileWarning([
+            { path: 'first.csv', size: 0.75 * GB },
+            { path: 'second.csv', size: 0.75 * GB },
+        ]),
+        '',
+    );
 });

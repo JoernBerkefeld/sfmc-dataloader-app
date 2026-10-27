@@ -206,21 +206,20 @@
 
         /**
          * For file-based imports, warns before starting when any selected file is
-         * very large (multi-GB). API-based imports (no filePaths) never trigger
-         * this. Returns true to proceed, false to abort.
+         * at least 1 GiB. API-based imports (no filePaths) never trigger this.
+         * Acknowledging the advisory does not authorize or cancel the job.
          *
          * @param {object} job
-         * @returns {boolean}
+         * @returns {void}
          */
-        function confirmLargeFiles(job) {
+        function warnLargeFiles(job) {
             if (!Array.isArray(job.filePaths) || job.filePaths.length === 0) {
-                return true;
+                return;
             }
             const message = globalObject.McFileSize.buildLargeFileWarning(files.getSizedFiles());
-            if (!message) {
-                return true;
+            if (message) {
+                globalObject.alert(message);
             }
-            return globalObject.confirm(message);
         }
 
         /**
@@ -273,10 +272,7 @@
                     toast('Clear-before-import cancelled — confirmation did not match.', 'warn');
                     return;
                 }
-                if (!confirmLargeFiles(job)) {
-                    toast('Import cancelled.', 'warn');
-                    return;
-                }
+                warnLargeFiles(job);
                 await runner.start(job);
             } finally {
                 isSubmitting = false;
