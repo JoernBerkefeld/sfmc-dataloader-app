@@ -4,7 +4,7 @@
 # regenerate .SRCINFO with `makepkg --printsrcinfo > .SRCINFO`.
 pkgname=sfmc-dataloader-app-bin
 _appname=sfmc-data-loader
-pkgver=0.6.1
+pkgver=0.7.0
 pkgrel=1
 pkgdesc="Standalone cross-platform desktop app for SFMC Data Extension export/import (wraps sfmc-dataloader)"
 arch=('x86_64')
@@ -14,7 +14,7 @@ depends=('gtk3' 'nss' 'alsa-lib')
 options=('!strip')
 source=("sfmc-dataloader-app-${pkgver}.AppImage::https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v${pkgver}/sfmc-dataloader-app-${pkgver}-linux-x86_64.AppImage")
 # Maintained automatically by scripts/update-packaging-manifests.mjs on release.
-sha256sums=('e9d5b90e0d85718405969fb9868468e0c868be7aea70981004b59f70300de118')
+sha256sums=('12be8a0e6468f47661e5c2cdabf7a1e51988b7af2388e1089081f5883144e2a5')
 
 prepare() {
     chmod +x "sfmc-dataloader-app-${pkgver}.AppImage"

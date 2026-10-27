@@ -1,12 +1,12 @@
 {
-    "version": "0.6.1",
+    "version": "0.7.0",
     "description": "Standalone cross-platform desktop app for SFMC Data Extension export/import (wraps sfmc-dataloader)",
     "homepage": "https://github.com/JoernBerkefeld/sfmc-dataloader-app",
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v0.6.1/sfmc-dataloader-app-0.6.1-win-x64.exe#/dl.7z",
-            "hash": "d2dfc4921f49611c848f012c765c93483af05eb2d181823b114196a02af7d12b"
+            "url": "https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/v0.7.0/sfmc-dataloader-app-0.7.0-win-x64.exe#/dl.7z",
+            "hash": "d5b75e43bc623d02f1e399c92d22d7d3626dda8ad05987f3b43e44048cca8bf4"
         }
     },
     "pre_install": [
