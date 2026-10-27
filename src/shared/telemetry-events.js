@@ -13,14 +13,14 @@
 //      collapsed into coarse buckets so a value can never identify a specific
 //      data set.
 //   3. Locale is reduced to the primary language subtag (e.g. `en-US` -> `en`)
-//      and only rides along on OPT-IN usage events — never on the mandatory
-//      lifecycle pings.
+//      and only rides along on usage events — never on lifecycle events.
+//      All events require saved affirmative consent.
 //   4. sanitizeParams() is the final gate: anything that is not a string/number/
 //      boolean is dropped, and strings are length-capped, before a payload is
 //      built.
 
 /**
- * GA4 event names. Lifecycle events are mandatory; usage events are opt-in.
+ * App event names. Every event requires saved affirmative app-level consent.
  *
  * Uninstalls are intentionally NOT tracked with an event: there is no reliable,
  * privacy-friendly, cross-platform uninstall hook, so churn is inferred from the
@@ -28,14 +28,16 @@
  * as inactive/uninstalled). See PRIVACY.md.
  */
 const EVENTS = {
-    // Mandatory lifecycle (no consent required, no locale attached).
-    APP_INSTALL: 'app_install',
+    // Lifecycle (saved affirmative consent required, no locale attached).
+    FIRST_CONSENTED_RUN: 'app_first_consented_run',
     APP_UPDATE: 'app_update',
     APP_LAUNCH: 'app_launch',
     // Optional usage (only sent with explicit opt-in consent).
     EXPORT_USED: 'export_used',
     IMPORT_USED: 'import_used',
     JOB_OUTCOME: 'job_outcome',
+    ACTION_OUTCOME: 'action_outcome',
+    LOADER_VERSION: 'loader_version',
 };
 
 /**
@@ -279,7 +281,7 @@ function sanitizeParameters(parameters) {
 }
 
 /**
- * Builds the params for a mandatory lifecycle event (install/update/launch).
+ * Builds params for a consenting lifecycle event (first consenting run/update/launch).
  * Deliberately excludes locale.
  *
  * @param {object} info
@@ -357,6 +359,10 @@ function buildImportParameters(info) {
  * @param {unknown} info.result - success/error/cancelled
  * @param {number} [info.rowCount] - peak row count observed for the job
  * @param {unknown} [info.locale]
+ * @param {number} [info.durationMs]
+ * @param {string} [info.errorCategory]
+ * @param {unknown} [info.errorName]
+ * @param {unknown} [info.errorCode]
  * @returns {Record<string, string | number | boolean>}
  */
 function buildJobOutcomeParameters(info) {
@@ -365,11 +371,116 @@ function buildJobOutcomeParameters(info) {
         kind: normalizeKind(info.kind),
         result: normalizeResult(info.result),
         row_count_bucket: rowCountBucket(info.rowCount),
+        duration_bucket: durationBucket(info.durationMs),
+        ...failureParameters(info),
         locale: normalizeLocale(info.locale),
     });
 }
 
+/**
+ * Coarse elapsed time; never a high-cardinality timing measurement.
+ *
+ * @param {unknown} milliseconds
+ * @returns {string}
+ */
+function durationBucket(milliseconds) {
+    if (typeof milliseconds !== 'number' || !Number.isFinite(milliseconds) || milliseconds < 0) {
+        return 'unknown';
+    }
+    if (milliseconds < 1000) {
+        return '<1s';
+    }
+    if (milliseconds < 10_000) {
+        return '1-10s';
+    }
+    if (milliseconds < 60_000) {
+        return '10-60s';
+    }
+    if (milliseconds < 600_000) {
+        return '1-10m';
+    }
+    return '>=10m';
+}
+
+/**
+ * Closed failure vocabulary, deliberately stricter than the extension's identifier patterns.
+ *
+ * @param {object} info
+ * @returns {object}
+ */
+function failureParameters(info) {
+    if (info.result !== 'error') {
+        return {};
+    }
+    return {
+        error_category: new Set([
+            'start_failed',
+            'job_failed',
+            'worker_error',
+            'worker_exit',
+            'config_unavailable',
+            'discovery_failed',
+        ]).has(info.errorCategory)
+            ? info.errorCategory
+            : 'unknown',
+        error_name: new Set(['Error', 'TypeError', 'RangeError', 'SyntaxError', 'AbortError']).has(
+            info.errorName,
+        )
+            ? info.errorName
+            : 'other',
+        error_code: new Set([
+            'ENOENT',
+            'EACCES',
+            'EPERM',
+            'ENOTDIR',
+            'ETIMEDOUT',
+            'ECONNRESET',
+            'ECONNREFUSED',
+            'ENOTFOUND',
+            'EAI_AGAIN',
+        ]).has(info.errorCode)
+            ? info.errorCode
+            : 'other',
+    };
+}
+
+/**
+ * Only a numeric release version can leave the loader metadata boundary.
+ *
+ * @param {unknown} version
+ * @returns {string}
+ */
+function normalizeVersion(version) {
+    return typeof version === 'string' && /^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(version)
+        ? version
+        : 'unknown';
+}
+
+/**
+ * Config reads and single-BU discovery are the app's command equivalents.
+ *
+ * @param {object} info
+ * @returns {object}
+ */
+function buildActionOutcomeParameters(info) {
+    return sanitizeParameters({
+        app_version: info.appVersion,
+        action: new Set(['config_load', 'de_discovery']).has(info.action) ? info.action : 'unknown',
+        result: normalizeResult(info.result),
+        duration_bucket: durationBucket(info.durationMs),
+        bu_count_bucket: deCountBucket(info.buCount),
+        is_mcdev_project: info.isMcdevProject === true,
+        is_mcdata_project: info.isMcdataProject === true,
+        locale: normalizeLocale(info.locale),
+        ...failureParameters(info),
+    });
+}
+
 module.exports = {
+    durationBucket,
+    failureParams: failureParameters,
+    normalizeVersion,
+    buildActionOutcomeParams: buildActionOutcomeParameters,
     EVENTS,
     FORMATS,
     RESULTS,

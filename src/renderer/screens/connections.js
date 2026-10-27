@@ -82,11 +82,23 @@
 
         const overwrite = checkbox('Overwrite an existing configuration', false);
 
+        let isSubmitting = false;
+        let hasActiveJob = false;
         const saveButton = button('Fetch business units & save');
+        const updateSaveButton = () => {
+            saveButton.disabled = isSubmitting || hasActiveJob;
+        };
+        globalObject.JobRunner.subscribeActive((active) => {
+            hasActiveJob = Boolean(active);
+            updateSaveButton();
+        });
         const addActions = element('div', { class: 'form-actions' });
         addActions.append(saveButton);
 
-        const runner = new globalObject.JobRunner();
+        const runner = new globalObject.JobRunner({
+            view: 'connections',
+            label: 'Connection setup',
+        });
 
         const credRow = element('div', { class: 'form-row' });
         credRow.append(credField, eidField);
@@ -261,18 +273,26 @@
             };
         }
 
-        useButton.addEventListener('click', () => {
+        useButton.addEventListener('click', async () => {
             const chosen = picker.input.value.trim();
             if (!chosen) {
                 toast('Choose a folder first.', 'warn');
                 return;
             }
             globalObject.McState.set({ projectRoot: chosen });
-            // Persist so the folder is restored on the next app launch. Fire-and-
-            // forget: a failure to persist must not block using the folder now.
-            void globalObject.mcdata.setProjectRoot(chosen);
-            toast('Project folder set.', 'success');
-            refreshSaved();
+            void refreshSaved();
+            useButton.disabled = true;
+            try {
+                const next = await globalObject.mcdata.setProjectRoot(chosen);
+                projectSaveStatus.textContent = next?.persistence?.saved
+                    ? 'Project folder saved for next launch.'
+                    : 'Project folder applies this session only; not saved for next launch. Click Use folder to retry.';
+            } catch {
+                projectSaveStatus.textContent =
+                    'Project folder is selected for this session; save could not be confirmed. Click Use folder to retry.';
+            } finally {
+                useButton.disabled = false;
+            }
         });
 
         openButton.addEventListener('click', async () => {
@@ -288,7 +308,7 @@
         });
 
         saveButton.addEventListener('click', async () => {
-            if (runner.isRunning) {
+            if (isSubmitting || hasActiveJob || runner.isRunning) {
                 return;
             }
             let job;
@@ -298,7 +318,8 @@
                 toast(ex?.message ?? String(ex), 'error');
                 return;
             }
-            saveButton.setAttribute('disabled', 'true');
+            isSubmitting = true;
+            updateSaveButton();
             try {
                 const outcome = await runner.start(job);
                 if (outcome.ok) {
@@ -306,11 +327,13 @@
                     await refreshSaved();
                 }
             } finally {
-                saveButton.removeAttribute('disabled');
+                isSubmitting = false;
+                updateSaveButton();
             }
         });
 
-        root.append(projectField, projectActions, savedSection, addSection);
+        const projectSaveStatus = element('p', { attrs: { role: 'status' } });
+        root.append(projectField, projectActions, projectSaveStatus, savedSection, addSection);
         container.append(root);
     }
 

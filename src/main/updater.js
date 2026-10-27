@@ -21,7 +21,7 @@ function defaultUpdater() {
 //
 // Downloads are automatic; installation is not. We call quitAndInstall() only
 // when the user explicitly asks (a data-loader must never restart mid-job), so
-// autoInstallOnAppQuit is left at its default and we never force a restart.
+// autoInstallOnAppQuit is disabled and installation passes the main-process guard.
 
 /**
  * Owns the auto-update lifecycle for the app. Construction only wires event
@@ -34,6 +34,7 @@ class UpdaterService {
      * @param {object} [options]
      * @param {import('electron-updater').AppUpdater} [options.updater] - injectable for tests
      * @param {boolean} [options.isPackaged] - defaults to true; when false, checks are skipped
+     * @param {(install: () => void) => Promise.<boolean> | boolean} [options.runInstall] - main-process lifecycle guard
      */
     constructor(getWebContents, options = {}) {
         /**
@@ -52,6 +53,12 @@ class UpdaterService {
          * @type {import('../shared/update-status').UpdateState}
          */
         this._state = { status: UPDATE_STATUS.IDLE };
+        this._runInstall =
+            options.runInstall ??
+            ((install) => {
+                install();
+                return true;
+            });
 
         // Downloads happen automatically; we control only the install/restart.
         this._updater.autoDownload = true;
@@ -149,14 +156,13 @@ class UpdaterService {
      * Quits and installs a previously downloaded update. Safe to call only when
      * the current state is DOWNLOADED; otherwise it is a no-op.
      *
-     * @returns {boolean} true when an install/restart was initiated
+     * @returns {Promise.<boolean> | boolean} true when an install/restart was initiated
      */
     quitAndInstall() {
         if (this._state.status !== UPDATE_STATUS.DOWNLOADED) {
             return false;
         }
-        this._updater.quitAndInstall();
-        return true;
+        return this._runInstall(() => this._updater.quitAndInstall());
     }
 }
 

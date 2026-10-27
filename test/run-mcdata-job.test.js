@@ -152,6 +152,12 @@ test('runJob turns a thrown mcdata error into an error message', async () => {
     const last = posted.at(-1);
     assert.equal(last.type, 'error');
     assert.equal(last.message, 'auth failed');
+    assert.deepEqual(last.telemetry, {
+        error_category: 'worker_error',
+        error_name: 'Error',
+        error_code: 'other',
+    });
+    assert.equal(JSON.stringify(last.telemetry).includes('auth failed'), false);
     assert.ok(typeof last.stack === 'string' && last.stack.length > 0);
     // The console must be restored even on the error path.
     assert.equal(target.log, originalLog);

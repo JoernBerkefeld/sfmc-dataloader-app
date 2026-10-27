@@ -1,20 +1,20 @@
 'use strict';
 
-// GA4 Measurement Protocol sender for the main process.
+// PostHog EU batch sender for the main process.
 //
 // Non-blocking guarantee (a hard requirement): NOTHING in the track* path ever
 // blocks the main thread. Each track call returns synchronously after scheduling
 // the work with setImmediate; the actual payload build + network POST run on a
 // later tick and are fire-and-forget (never awaited). A per-request
-// AbortSignal.timeout guarantees a hung/slow endpoint can never accumulate open
+// abort timeout guarantees a hung/slow endpoint can never accumulate open
 // sockets. Any error — offline, DNS failure, non-2xx — is swallowed: telemetry
 // must never affect the app.
 //
 // Gating, in order (a send is dropped as soon as one fails):
 //   1. enabled            false in dev/unpackaged builds (no telemetry locally)
-//   2. isConfigured()     false when the GA4 ids were not injected at build time
-//   3. consent (opt-in)   optional usage events require telemetryConsent === true;
-//                         mandatory lifecycle pings ignore this gate
+//   2. isConfigured()     validates the public PostHog EU ingestion configuration
+//   3. consent (opt-in)   ALL events require saved, versioned affirmative consent;
+//                         rechecked on dispatch, with no preconsent buffering
 //
 // See src/shared/telemetry-events.js for the PII firewall that shapes every
 // event's params before they reach this sender.
@@ -36,6 +36,7 @@ class Analytics {
      * @param {import('./settings-store').SettingsStore} options.settings - source of clientId + consent
      * @param {string} options.appVersion - app.getVersion()
      * @param {string} [options.locale] - app.getLocale(), used only on opt-in events
+     * @param {string} [options.loaderVersion] - resolved installed loader package version
      * @param {boolean} [options.enabled] - false disables all sends (dev builds)
      * @param {object} [options.config] - analytics-config override (endpoint + ids), for tests
      * @param {typeof fetch} [options.fetch] - injectable fetch, for tests
@@ -56,6 +57,7 @@ class Analytics {
          * @type {string | undefined}
          */
         this._locale = options.locale;
+        this._loaderVersion = events.normalizeVersion(options.loaderVersion);
         /**
          * @type {boolean}
          */
@@ -89,29 +91,21 @@ class Analytics {
          * @type {string}
          */
         this._channel = events.installChannel(this._runtime);
-        // Per-process session id keeps GA4's active-user / engagement reporting
-        // working. It is random and rotates every launch, so it identifies a run,
-        // not a person, and adds no information beyond the existing client_id.
-        /**
-         * @type {string}
-         */
-        this._sessionId = String(Date.now());
+        this._pending = new Map();
+        this._inFlight = new Set();
+        this._disposed = false;
     }
 
     /**
      * Gates, defers, and dispatches a single event. Returns immediately; the
      * fetch is scheduled for a later tick and never awaited.
      *
-     * @param {string} name - GA4 event name
+     * @param {string} name - catalogued app event name
      * @param {Record<string, string | number | boolean>} parameters - already sanitised
-     * @param {boolean} requireConsent - true for optional usage events
      * @returns {void}
      */
-    #send(name, parameters, requireConsent) {
-        if (!this.isActive()) {
-            return;
-        }
-        if (requireConsent && this._settings.getConsent() !== true) {
+    #send(name, parameters) {
+        if (!this.isActive() || this._settings.getConsent() !== true) {
             return;
         }
         const clientId = this._settings.getClientId();
@@ -121,8 +115,20 @@ class Analytics {
 
         // Defer everything off the caller's tick so building the payload and the
         // network call can never add latency to the action that triggered it.
+        const revision = this._settings.getConsentRevision();
+        const token = {};
+        this._pending.set(token, { clientId, name, parameters });
         this._schedule(() => {
-            this.#post(clientId, name, parameters);
+            const pending = this._pending.get(token);
+            this._pending.delete(token);
+            if (
+                pending &&
+                this.isActive() &&
+                this._settings.getConsent() === true &&
+                this._settings.getConsentRevision() === revision
+            ) {
+                this.#post(pending.clientId, pending.name, pending.parameters);
+            }
         });
     }
 
@@ -135,38 +141,66 @@ class Analytics {
      * @returns {Promise.<void>}
      */
     async #post(clientId, name, parameters) {
-        const url =
-            `${this._config.MP_ENDPOINT}?measurement_id=${encodeURIComponent(this._config.MEASUREMENT_ID)}` +
-            `&api_secret=${encodeURIComponent(this._config.API_SECRET)}`;
-
-        const body = JSON.stringify({
-            client_id: clientId,
-            non_personalized_ads: true,
-            events: [
-                {
-                    name,
-                    params: {
-                        ...parameters,
-                        session_id: this._sessionId,
-                        engagement_time_msec: 1,
-                    },
-                },
-            ],
-        });
+        const controller = new AbortController();
+        this._inFlight.add(controller);
+        const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        timeout.unref?.();
 
         try {
+            const body = JSON.stringify({
+                api_key: this._config.PROJECT_API_KEY,
+                batch: [
+                    {
+                        event: name,
+                        properties: {
+                            ...parameters,
+                            distinct_id: clientId,
+                            app: 'sfmc-dataloader-app',
+                            $process_person_profile: false,
+                        },
+                        timestamp: new Date().toISOString(),
+                    },
+                ],
+            });
             // Awaited inside try/catch so any rejection (offline, timeout, DNS,
             // non-2xx) or synchronous throw (fetch unavailable) is swallowed —
             // telemetry is strictly best-effort and must never affect the app.
-            await this._fetch(url, {
+            await this._fetch(this._config.BATCH_ENDPOINT, {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
                 body,
-                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+                signal: controller.signal,
             });
         } catch {
             // ignore — best-effort only
+        } finally {
+            clearTimeout(timeout);
+            this._inFlight.delete(controller);
         }
+    }
+
+    /**
+     * Discards queued payloads immediately when consent changes.
+     *
+     * @returns {void}
+     */
+    clearPending() {
+        this._pending.clear();
+        for (const controller of this._inFlight) {
+            controller.abort();
+        }
+        this._inFlight.clear();
+    }
+
+    /**
+     * Stops immediately at shutdown, without waiting for a transport that may ignore abort.
+     * Queued events are deliberately discarded rather than drained at exit.
+     *
+     * @returns {void}
+     */
+    dispose() {
+        this._disposed = true;
+        this.clearPending();
     }
 
     /**
@@ -176,15 +210,15 @@ class Analytics {
      * @returns {boolean}
      */
     isActive() {
-        return this._enabled === true && this._config.isConfigured();
+        return !this._disposed && this._enabled === true && this._config.isConfigured();
     }
 
-    // --- mandatory lifecycle events (no consent gate, no locale) --------------
+    // --- lifecycle events (saved consent required, no locale) ----------------
 
     /**
-     * Fires the lifecycle ping matching the startup event derived by the settings
-     * store: 'install' -> app_install, 'update' -> app_update, anything else ->
-     * app_launch. app_launch always fires so active-install counts stay accurate.
+     * Records a consenting startup or the first saved affirmative choice.
+     * Never translates an install/migration into an installation count. Events
+     * dropped before consent are not replayed when a choice is later saved.
      *
      * @param {string} event - one of settings-store LIFECYCLE values
      * @returns {void}
@@ -197,14 +231,64 @@ class Analytics {
             arch: this._runtime.arch,
             channel: this._channel,
         });
-        if (event === 'install') {
-            this.#send(events.EVENTS.APP_INSTALL, parameters, false);
+        if (event === 'first-consented-run') {
+            this.#send(events.EVENTS.FIRST_CONSENTED_RUN, parameters);
         } else if (event === 'update') {
-            this.#send(events.EVENTS.APP_UPDATE, parameters, false);
+            this.#send(events.EVENTS.APP_UPDATE, parameters);
         }
-        // app_launch is sent on EVERY startup (install and update included) so it
-        // is a reliable daily-active / active-install signal.
-        this.#send(events.EVENTS.APP_LAUNCH, parameters, false);
+        // Launches describe consenting runs only, never all active installations.
+        this.#send(events.EVENTS.APP_LAUNCH, parameters);
+    }
+
+    /**
+     * Captures eligibility without retaining activity before a saved opt-in.
+     *
+     * @returns {number | undefined}
+     */
+    beginOperation() {
+        return this.isActive() && this._settings.getConsent() === true
+            ? this._settings.getConsentRevision()
+            : undefined;
+    }
+
+    /**
+     * Rejects work spanning a consent change, including opt-out then opt-in.
+     *
+     * @param {number | undefined} revision
+     * @returns {boolean}
+     */
+    acceptsOperation(revision) {
+        return revision !== undefined && revision === this.beginOperation();
+    }
+
+    /**
+     * Reports the installed runtime package, not a dependency range or CLI source.
+     *
+     * @returns {void}
+     */
+    trackLoaderVersion() {
+        this.#send(events.EVENTS.LOADER_VERSION, {
+            app_version: this._appVersion,
+            loader_version: this._loaderVersion,
+        });
+    }
+
+    /**
+     * @param {object} info
+     * @param {number | undefined} revision
+     * @returns {void}
+     */
+    trackActionOutcome(info, revision) {
+        if (this.acceptsOperation(revision)) {
+            this.#send(
+                events.EVENTS.ACTION_OUTCOME,
+                events.buildActionOutcomeParams({
+                    ...info,
+                    appVersion: this._appVersion,
+                    locale: this._locale,
+                }),
+            );
+        }
     }
 
     // --- optional usage events (consent required, locale attached) ------------
@@ -221,7 +305,7 @@ class Analytics {
             multiBu: info.multiBu,
             locale: this._locale,
         });
-        this.#send(events.EVENTS.EXPORT_USED, parameters, true);
+        this.#send(events.EVENTS.EXPORT_USED, parameters);
     }
 
     /**
@@ -239,11 +323,11 @@ class Analytics {
             crossBu: info.crossBu,
             locale: this._locale,
         });
-        this.#send(events.EVENTS.IMPORT_USED, parameters, true);
+        this.#send(events.EVENTS.IMPORT_USED, parameters);
     }
 
     /**
-     * @param {{ kind: unknown, result: unknown, rowCount?: number }} info
+     * @param {{ kind: unknown, result: unknown, rowCount?: number, durationMs?: number, errorCategory?: string, errorName?: unknown, errorCode?: unknown }} info
      * @returns {void}
      */
     trackJobOutcome(info) {
@@ -252,9 +336,13 @@ class Analytics {
             kind: info.kind,
             result: info.result,
             rowCount: info.rowCount,
+            durationMs: info.durationMs,
+            errorCategory: info.errorCategory,
+            errorName: info.errorName,
+            errorCode: info.errorCode,
             locale: this._locale,
         });
-        this.#send(events.EVENTS.JOB_OUTCOME, parameters, true);
+        this.#send(events.EVENTS.JOB_OUTCOME, parameters);
     }
 }
 

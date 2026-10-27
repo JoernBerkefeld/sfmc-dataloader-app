@@ -6,11 +6,11 @@ of truth; every package manager below just points at those assets.
 
 Per release, the workflow builds and uploads:
 
-| Platform | Artifacts | Auto-updates? |
-| --- | --- | --- |
-| Windows | `sfmc-dataloader-app-<version>-win-x64.exe` (NSIS) | Yes — in-app (electron-updater) |
-| macOS | `sfmc-dataloader-app-<version>-mac-x64.dmg`, `-mac-arm64.dmg` | Yes — in-app (electron-updater, needs signing) |
-| Linux | `-linux-x64.AppImage`, `-linux-x64.deb`, `-linux-x64.rpm`, `-linux-x64.snap` | AppImage: in-app; deb/rpm/snap: package manager |
+| Platform | Artifacts                                                                                                                | Auto-updates?                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| Windows  | `sfmc-dataloader-app-<version>-win-x64.exe` (NSIS)                                                                       | Yes — in-app (electron-updater)                 |
+| macOS    | `sfmc-dataloader-app-<version>-mac-x64.dmg`, `-mac-arm64.dmg`, plus `-mac-x64.zip` and `-mac-arm64.zip` updater archives | Yes — in-app (electron-updater, needs signing)  |
+| Linux    | `-linux-x64.AppImage`, `-linux-x64.deb`, `-linux-x64.rpm`, `-linux-x64.snap`                                             | AppImage: in-app; deb/rpm/snap: package manager |
 
 ## In-app auto-update (electron-updater)
 
@@ -42,8 +42,12 @@ via `autoupdate`).
 
 Three-file manifest for `JoernBerkefeld.SFMCDataLoader`. First submission is a
 one-time PR to [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs).
-After that, `.github/workflows/winget-publish.yml` auto-submits each release when
-a `WINGET_TOKEN` secret (a PAT that can fork winget-pkgs) is present. Then:
+After that, `build-release.yml` calls the reusable
+`.github/workflows/winget-publish.yml` for stable releases only, after the full
+installer build/upload matrix succeeds. A missing `WINGET_TOKEN` secret (a PAT
+that can fork winget-pkgs) skips submission successfully. With the token present,
+`wingetcreate` submits the release; an actual submission error fails the workflow.
+Then:
 
 ```powershell
 winget install JoernBerkefeld.SFMCDataLoader
@@ -106,13 +110,18 @@ each channel's **own** registry/repo:
 1. **Scoop** — the bucket repo (`JoernBerkefeld/scoop-bucket`) tracks new
    releases via `checkver` + `autoupdate`, so `scoop update` picks them up; the
    in-repo copy here is just the seed.
-2. **winget** — automatic via `winget-publish.yml` (wingetcreate opens the PR
-   against `microsoft/winget-pkgs`); the local YAMLs are only a seed.
+2. **winget** — for stable releases, `build-release.yml` calls the reusable
+   `winget-publish.yml` after the full build/upload matrix succeeds. A missing
+   token skips successfully; with a token, wingetcreate opens the PR against
+   `microsoft/winget-pkgs`, and submission errors fail the workflow. The local
+   YAMLs are only a seed.
 3. **Flatpak** — once the app is on Flathub, the `x-checker-data` bot bumps the
    `.deb` `url` + `sha256` on the Flathub repo automatically.
 4. **AUR** — **no bot**: after the seed is refreshed, push `PKGBUILD` +
    regenerated `.SRCINFO` to the AUR repo (`updpkgsums` is unnecessary because
    the script already fills in the real `sha256sums`).
 
-Nothing here blocks the core release: the GitHub Release + in-app auto-update
-work on their own, and each package-manager channel is best-effort on top.
+Snap tooling/build/upload steps are non-fatal, unlike actual winget submission
+or manifest-refresh failures, which fail their post-build jobs and the workflow.
+A post-build failure does not undo assets already uploaded to the GitHub Release;
+it is not evidence that every distribution channel completed successfully.

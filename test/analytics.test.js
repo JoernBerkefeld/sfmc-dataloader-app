@@ -13,10 +13,11 @@ const { Analytics } = require('../src/main/analytics');
  * @param {boolean | undefined} [options.consent]
  * @returns {{ getClientId: () => string, getConsent: () => (boolean | undefined) }}
  */
-function fakeSettings({ clientId = 'client-1', consent } = {}) {
+function fakeSettings({ clientId = 'client-1', consent = true } = {}) {
     return {
         getClientId: () => clientId,
         getConsent: () => consent,
+        getConsentRevision: () => 0,
     };
 }
 
@@ -24,13 +25,12 @@ function fakeSettings({ clientId = 'client-1', consent } = {}) {
  * A configured analytics-config double so isConfigured() is true by default.
  *
  * @param {boolean} [isConfigured]
- * @returns {{ MP_ENDPOINT: string, MEASUREMENT_ID: string, API_SECRET: string, isConfigured: () => boolean }}
+ * @returns {{ BATCH_ENDPOINT: string, PROJECT_API_KEY: string, isConfigured: () => boolean }}
  */
 function fakeConfig(isConfigured = true) {
     return {
-        MP_ENDPOINT: 'https://example.test/mp/collect',
-        MEASUREMENT_ID: isConfigured ? 'G-TEST' : '',
-        API_SECRET: isConfigured ? 'secret' : '',
+        BATCH_ENDPOINT: 'https://eu.i.posthog.com/batch/',
+        PROJECT_API_KEY: isConfigured ? 'phc_test_public_ingestion' : '',
         isConfigured: () => isConfigured,
     };
 }
@@ -64,6 +64,7 @@ function makeAnalytics(overrides = {}) {
     const analytics = new Analytics({
         settings: overrides.settings ?? fakeSettings(),
         appVersion: '1.2.3',
+        loaderVersion: overrides.loaderVersion,
         locale: overrides.locale ?? 'en-US',
         enabled: overrides.enabled ?? true,
         config: overrides.config ?? fakeConfig(),
@@ -94,12 +95,80 @@ function flush(scheduled) {
     }
 }
 
+test('parity events use the shared consent gate and never replay preconsent operations', () => {
+    let isConsent = false;
+    let revision = 0;
+    const { analytics, fetchCalls, scheduled } = makeAnalytics({
+        settings: {
+            getConsent: () => isConsent,
+            getConsentRevision: () => revision,
+            getClientId: () => 'random-client',
+        },
+    });
+    const before = analytics.beginOperation();
+    analytics.trackLoaderVersion();
+    isConsent = true;
+    analytics.trackActionOutcome({ action: 'de_discovery', result: 'success' }, before);
+    const accepted = analytics.beginOperation();
+    analytics.trackActionOutcome(
+        {
+            action: 'de_discovery',
+            result: 'error',
+            errorCategory: 'discovery_failed',
+            errorName: 'SECRET',
+            errorCode: 'F:/SECRET',
+        },
+        accepted,
+    );
+    analytics.trackLoaderVersion();
+    flush(scheduled);
+    assert.equal(fetchCalls.length, 2);
+    const bodies = fetchCalls.map((call) => JSON.parse(call.options.body).batch[0]);
+    assert.deepEqual(
+        bodies.map((item) => item.event),
+        ['action_outcome', 'loader_version'],
+    );
+    assert.equal(JSON.stringify(bodies).includes('SECRET'), false);
+    assert.equal(bodies[1].properties.loader_version, 'unknown');
+    revision++;
+    analytics.trackActionOutcome({ action: 'config_load', result: 'success' }, accepted);
+    flush(scheduled);
+    assert.equal(fetchCalls.length, 2);
+});
+
+test('resolved loader version is shaped without exposing a source path', () => {
+    const { analytics, scheduled, fetchCalls } = makeAnalytics({ loaderVersion: '3.2.0' });
+    analytics.trackLoaderVersion();
+    flush(scheduled);
+    assert.equal(
+        JSON.parse(fetchCalls[0].options.body).batch[0].properties.loader_version,
+        '3.2.0',
+    );
+});
+
+for (const overrides of [
+    { enabled: false },
+    { settings: fakeSettings({ consent: false }) },
+    { settings: { ...fakeSettings(), getConsent: () => {} } },
+]) {
+    test(`new parity events remain disabled for ${JSON.stringify(overrides)}`, () => {
+        const { analytics, scheduled, fetchCalls } = makeAnalytics(overrides);
+        analytics.trackLoaderVersion();
+        analytics.trackActionOutcome(
+            { action: 'config_load', result: 'success' },
+            analytics.beginOperation(),
+        );
+        flush(scheduled);
+        assert.equal(fetchCalls.length, 0);
+    });
+}
+
 test('isActive is false when disabled (dev build)', () => {
     const { analytics } = makeAnalytics({ enabled: false });
     assert.equal(analytics.isActive(), false);
 });
 
-test('isActive is false when ids were not injected', () => {
+test('isActive is false when ingestion is not configured', () => {
     const { analytics } = makeAnalytics({ config: fakeConfig(false) });
     assert.equal(analytics.isActive(), false);
 });
@@ -123,14 +192,14 @@ test('trackLifecycle returns synchronously and defers the POST', () => {
     assert.equal(fetchCalls.length, 1);
 });
 
-test('install lifecycle sends app_install AND app_launch', () => {
+test('first consenting run sends an honest event AND app_launch, never app_install', () => {
     const { analytics, fetchCalls, scheduled } = makeAnalytics();
 
-    analytics.trackLifecycle('install');
+    analytics.trackLifecycle('first-consented-run');
     flush(scheduled);
 
-    const names = fetchCalls.map((call) => JSON.parse(call.options.body).events[0].name);
-    assert.deepEqual(names, ['app_install', 'app_launch']);
+    const names = fetchCalls.map((call) => JSON.parse(call.options.body).batch[0].event);
+    assert.deepEqual(names, ['app_first_consented_run', 'app_launch']);
 });
 
 test('update lifecycle sends app_update AND app_launch', () => {
@@ -139,7 +208,7 @@ test('update lifecycle sends app_update AND app_launch', () => {
     analytics.trackLifecycle('update');
     flush(scheduled);
 
-    const names = fetchCalls.map((call) => JSON.parse(call.options.body).events[0].name);
+    const names = fetchCalls.map((call) => JSON.parse(call.options.body).batch[0].event);
     assert.deepEqual(names, ['app_update', 'app_launch']);
 });
 
@@ -149,24 +218,25 @@ test('plain launch sends only app_launch', () => {
     analytics.trackLifecycle('launch');
     flush(scheduled);
 
-    const names = fetchCalls.map((call) => JSON.parse(call.options.body).events[0].name);
+    const names = fetchCalls.map((call) => JSON.parse(call.options.body).batch[0].event);
     assert.deepEqual(names, ['app_launch']);
 });
 
-test('lifecycle events fire even without consent', () => {
+test('lifecycle events are not sent or queued after a decline', () => {
     const { analytics, fetchCalls, scheduled } = makeAnalytics({
         settings: fakeSettings({ consent: false }),
     });
 
-    analytics.trackLifecycle('launch');
+    analytics.trackLifecycle('install');
+    assert.equal(scheduled.length, 0);
     flush(scheduled);
 
-    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls.length, 0);
 });
 
 test('optional usage events are dropped without opt-in consent', () => {
     const { analytics, fetchCalls, scheduled } = makeAnalytics({
-        settings: fakeSettings({ consent: undefined }),
+        settings: { ...fakeSettings(), getConsent: () => {} },
     });
 
     analytics.trackExport({ format: 'csv', deCount: 3 });
@@ -187,9 +257,9 @@ test('optional usage events fire when consent is granted', () => {
 
     assert.equal(fetchCalls.length, 1);
     const payload = JSON.parse(fetchCalls[0].options.body);
-    assert.equal(payload.events[0].name, 'export_used');
-    assert.equal(payload.events[0].params.de_count_bucket, '2-5');
-    assert.equal(payload.events[0].params.locale, 'en');
+    assert.equal(payload.batch[0].event, 'export_used');
+    assert.equal(payload.batch[0].properties.de_count_bucket, '2-5');
+    assert.equal(payload.batch[0].properties.locale, 'en');
 });
 
 test('nothing is sent when disabled, regardless of consent', () => {
@@ -217,22 +287,21 @@ test('a missing client id blocks the send', () => {
     assert.equal(fetchCalls.length, 0);
 });
 
-test('the POST targets the configured EU endpoint with credentials in the query', () => {
+test('the POST targets PostHog EU without credentials in the URL', () => {
     const { analytics, fetchCalls, scheduled } = makeAnalytics();
 
     analytics.trackLifecycle('launch');
     flush(scheduled);
 
     const { url, options } = fetchCalls[0];
-    assert.match(url, /^https:\/\/example\.test\/mp\/collect\?/);
-    assert.match(url, /measurement_id=G-TEST/);
-    assert.match(url, /api_secret=secret/);
+    assert.equal(url, 'https://eu.i.posthog.com/batch/');
+    assert.equal(JSON.parse(options.body).api_key, 'phc_test_public_ingestion');
     assert.equal(options.method, 'POST');
     assert.equal(options.headers['content-type'], 'application/json');
     assert.ok(options.signal, 'a timeout AbortSignal must be attached');
 });
 
-test('the payload carries client_id, non_personalized_ads and a session id', () => {
+test('the payload uses random clientId as distinct_id, app identity and no person profiles', () => {
     const { analytics, fetchCalls, scheduled } = makeAnalytics({
         settings: fakeSettings({ clientId: 'abc-123' }),
     });
@@ -241,10 +310,32 @@ test('the payload carries client_id, non_personalized_ads and a session id', () 
     flush(scheduled);
 
     const payload = JSON.parse(fetchCalls[0].options.body);
-    assert.equal(payload.client_id, 'abc-123');
-    assert.equal(payload.non_personalized_ads, true);
-    assert.ok(payload.events[0].params.session_id);
-    assert.equal(payload.events[0].params.engagement_time_msec, 1);
+    assert.deepEqual(
+        Object.keys(payload).toSorted((a, b) => a.localeCompare(b)),
+        ['api_key', 'batch'],
+    );
+    const item = payload.batch[0];
+    assert.deepEqual(
+        Object.keys(item).toSorted((a, b) => a.localeCompare(b)),
+        ['event', 'properties', 'timestamp'],
+    );
+    assert.equal(item.properties.distinct_id, 'abc-123');
+    assert.equal(item.properties.app, 'sfmc-dataloader-app');
+    assert.equal(item.properties.$process_person_profile, false);
+    assert.equal(new Date(item.timestamp).toISOString(), item.timestamp);
+    assert.deepEqual(
+        Object.keys(item.properties).toSorted((a, b) => a.localeCompare(b)),
+        [
+            '$process_person_profile',
+            'app',
+            'app_version',
+            'arch',
+            'distinct_id',
+            'install_channel',
+            'os',
+            'os_version',
+        ],
+    );
 });
 
 test('a throwing fetch never propagates out of a track call', () => {
@@ -271,6 +362,50 @@ test('a rejected fetch promise is swallowed', async () => {
     await new Promise((resolve) => setImmediate(resolve));
 });
 
+test('pending events are never scheduled or replayed after consent', () => {
+    const state = { consent: undefined };
+    const settings = { ...fakeSettings(), getConsent: () => state.consent };
+    const { analytics, scheduled, fetchCalls } = makeAnalytics({ settings });
+    analytics.trackLifecycle('install');
+    analytics.trackExport({ format: 'csv', deCount: 1 });
+    analytics.trackImport({ format: 'csv', deCount: 1 });
+    analytics.trackJobOutcome({ kind: 'export', result: 'success' });
+    assert.equal(scheduled.length, 0);
+    state.consent = true;
+    flush(scheduled);
+    assert.equal(fetchCalls.length, 0);
+    analytics.trackLifecycle('launch');
+    flush(scheduled);
+    assert.equal(fetchCalls.length, 1);
+});
+
+test('withdrawal drops queued events, including after a rapid re-opt-in', () => {
+    let isConsent = true;
+    let revision = 0;
+    const settings = {
+        ...fakeSettings(),
+        getConsent: () => isConsent,
+        getConsentRevision: () => revision,
+    };
+    const { analytics, scheduled, fetchCalls } = makeAnalytics({ settings });
+    analytics.trackLifecycle('launch');
+    analytics.trackExport({ format: 'csv', deCount: 1 });
+    isConsent = false;
+    revision++;
+    flush(scheduled);
+    assert.equal(fetchCalls.length, 0);
+    isConsent = true;
+    analytics.trackLifecycle('launch');
+    analytics.clearPending();
+    revision++;
+    flush(scheduled);
+    assert.equal(fetchCalls.length, 0);
+    analytics.trackLifecycle('launch');
+    revision++;
+    flush(scheduled);
+    assert.equal(fetchCalls.length, 0);
+});
+
 test('the default scheduler is setImmediate (real deferral, not inline)', async () => {
     const { fetch, calls } = recordingFetch();
     const analytics = new Analytics({
@@ -290,4 +425,144 @@ test('the default scheduler is setImmediate (real deferral, not inline)', async 
 
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(calls.length, 1);
+});
+
+test('withdrawal aborts active requests and invalidates queued payloads', () => {
+    const signals = [];
+    const { analytics, scheduled } = makeAnalytics({
+        fetch: (_url, options) => {
+            signals.push(options.signal);
+            return new Promise(() => {});
+        },
+    });
+    analytics.trackLifecycle('launch');
+    flush(scheduled);
+    analytics.trackExport({ format: 'csv', deCount: 1 });
+    analytics.clearPending();
+    assert.equal(signals[0].aborted, true);
+    flush(scheduled);
+    assert.equal(signals.length, 1);
+});
+
+test('shutdown is immediate even if fetch ignores abort, and permanently disables sends', () => {
+    let signal;
+    const { analytics, scheduled } = makeAnalytics({
+        fetch: (_url, options) => {
+            signal = options.signal;
+            return new Promise(() => {});
+        },
+    });
+    analytics.trackLifecycle('launch');
+    flush(scheduled);
+    analytics.trackLifecycle('launch');
+    assert.equal(analytics.dispose(), undefined);
+    assert.equal(signal.aborted, true);
+    assert.equal(analytics.isActive(), false);
+    flush(scheduled);
+    analytics.trackLifecycle('launch');
+    assert.equal(scheduled.length, 0);
+    assert.doesNotThrow(() => analytics.dispose());
+});
+
+test('every usage payload has only the safe event contract despite sensitive extra input', () => {
+    const { analytics, scheduled, fetchCalls } = makeAnalytics();
+    const sensitive = {
+        path: 'F:/private/customer.csv',
+        deName: 'Customers',
+        buId: '1234567',
+        error: 'password=secret',
+        credentials: { secret: 'private' },
+        extension: 'inventory',
+        $process_person_profile: true,
+    };
+    analytics.trackExport({ ...sensitive, format: sensitive.path, deCount: 4 });
+    analytics.trackImport({ ...sensitive, format: 'csv', deCount: 1, mode: sensitive.path });
+    analytics.trackJobOutcome({ ...sensitive, kind: sensitive.path, result: sensitive.error });
+    flush(scheduled);
+    const contracts = [
+        ['app_version', 'format', 'de_count_bucket', 'multi_bu', 'locale'],
+        [
+            'app_version',
+            'format',
+            'de_count_bucket',
+            'file_count_bucket',
+            'size_bucket',
+            'mode',
+            'cross_bu',
+            'locale',
+        ],
+        ['app_version', 'kind', 'result', 'row_count_bucket', 'duration_bucket', 'locale'],
+    ];
+    for (const [index, call] of fetchCalls.entries()) {
+        const properties = JSON.parse(call.options.body).batch[0].properties;
+        assert.deepEqual(
+            Object.keys(properties).toSorted((a, b) => a.localeCompare(b)),
+            [...contracts[index], 'distinct_id', 'app', '$process_person_profile'].toSorted(
+                (a, b) => a.localeCompare(b),
+            ),
+        );
+        assert.equal(properties.$process_person_profile, false);
+        assert.equal(properties.app, 'sfmc-dataloader-app');
+        for (const value of ['Customers', '1234567', 'password=', 'customer.csv', 'inventory']) {
+            assert.equal(call.options.body.includes(value), false);
+        }
+    }
+});
+
+test('request timeout aborts a hung transport after five seconds', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    let signal;
+    const { analytics, scheduled } = makeAnalytics({
+        fetch: (_url, options) => {
+            signal = options.signal;
+            return new Promise((resolve) =>
+                signal.addEventListener('abort', resolve, { once: true }),
+            );
+        },
+    });
+    analytics.trackLifecycle('launch');
+    flush(scheduled);
+    assert.equal(signal.aborted, false);
+    context.mock.timers.tick(5000);
+    assert.equal(signal.aborted, true);
+    await new Promise((resolve) => setImmediate(resolve));
+});
+
+test('deferred dispatch rechecks strict consent even without a revision change', () => {
+    let consent = true;
+    const { analytics, scheduled, fetchCalls } = makeAnalytics({
+        settings: { ...fakeSettings(), getConsent: () => consent },
+    });
+    analytics.trackLifecycle('launch');
+    consent = false;
+    flush(scheduled);
+    assert.equal(fetchCalls.length, 0);
+    consent = 'true';
+    analytics.trackLifecycle('launch');
+    assert.equal(scheduled.length, 0);
+});
+
+test('release and packaging cannot inject or ship legacy GA4 credentials', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const root = path.join(__dirname, '..');
+    const workflow = fs.readFileSync(
+        path.join(root, '.github/workflows/build-release.yml'),
+        'utf8',
+    );
+    const packaging = fs.readFileSync(path.join(root, 'electron-builder.yml'), 'utf8');
+    const config = fs.readFileSync(path.join(root, 'src/main/analytics-config.js'), 'utf8');
+    assert.doesNotMatch(workflow, /GA4_|write-analytics-config|Inject analytics config/);
+    assert.match(packaging, /!src\/main\/analytics-config\.generated\.json/);
+    assert.doesNotMatch(config, /readFile|analytics-config\.generated/);
+    assert.equal(fs.existsSync(path.join(root, 'scripts/write-analytics-config.mjs')), false);
+});
+
+test('public configuration matches the read-only extension ingestion contract', () => {
+    const config = require('../src/main/analytics-config');
+    assert.equal(config.BATCH_ENDPOINT, 'https://eu.i.posthog.com/batch/');
+    assert.equal(config.PROJECT_API_KEY, 'phc_AY9WHA5c6M9QqkaapgPqSTZ2NNZK3L3FxwkbdASsS7Ex');
+    assert.equal(config.isConfigured(), true);
+    assert.equal('API_SECRET' in config, false);
+    assert.equal('MEASUREMENT_ID' in config, false);
 });

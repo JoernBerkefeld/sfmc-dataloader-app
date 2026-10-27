@@ -282,7 +282,13 @@ function loadJobRunner() {
     sandbox.clearTimeout = (id) => {
         scheduled.delete(id);
     };
-    return { runner: new sandbox.JobRunner(), mcdata, flush, scheduled };
+    return {
+        runner: new sandbox.JobRunner(),
+        mcdata,
+        flush,
+        scheduled,
+        JobRunner: sandbox.JobRunner,
+    };
 }
 
 /**
@@ -432,6 +438,47 @@ test('cancellation failure and delayed exit remain retryable without reporting c
     assert.match(status.textContent, /may still finish remotely/);
 });
 
+for (const terminal of ['complete', 'error', 'reject']) {
+    test(`global active job reserves startup and releases on ${terminal}`, async () => {
+        const { runner, mcdata, JobRunner } = loadJobRunner();
+        const states = [];
+        const off = JobRunner.subscribeActive((state) => {
+            states.push(state);
+        });
+        const other = new JobRunner({ view: 'import', label: 'Import' });
+        const startup = Promise.withResolvers();
+        mcdata.startJob = () => startup.promise;
+        const finished = runner.start({ kind: 'export' });
+        assert.equal(states.at(-1).status, 'Starting…');
+        const blocked = await other.start({ kind: 'import' });
+        assert.equal(blocked.ok, false);
+        if (terminal === 'reject') {
+            startup.reject(new Error('Start denied'));
+        } else {
+            startup.resolve({ jobId: 'job-1' });
+            await new Promise(setImmediate);
+            assert.equal(states.at(-1).status, 'Running…');
+            mcdata.emit(terminal, { jobId: 'job-1', exitCode: 0, message: 'Failed' });
+        }
+        await finished;
+        assert.equal(states.at(-1), undefined);
+        assert.equal(runner.isRunning, false);
+        off();
+        const status = runner.element.children.find(
+            (node) => node.className === 'job-status muted',
+        );
+        assert.equal(status.getAttribute('role'), 'status');
+        const log = runner.element.children.find((node) => node.className === 'job-log');
+        assert.equal(log.getAttribute('tabindex'), '0');
+        assert.equal(
+            log.getAttribute('aria-live'),
+            undefined,
+            'raw logs must not flood announcements',
+        );
+        assert.equal(runner.element.getAttribute('tabindex'), '-1');
+    });
+}
+
 test('a freshly constructed JobRunner is idle (regression: isRunning must be false)', () => {
     const { runner } = loadJobRunner();
     // Guard against the #jobId sentinel drift: the field starts as `undefined`,
@@ -476,6 +523,36 @@ test('streaming upload replaces determinate download progress and supports legac
     const outcome = await pending;
     assert.equal(outcome.ok, true);
 });
+
+for (const terminal of ['success', 'cancel', 'nonzero', 'error']) {
+    test(`progress is named and reaches 100 only for verified ${terminal}`, async () => {
+        const { runner, mcdata } = loadJobRunner();
+        const bar = runner.element.firstElementChild;
+        assert.equal(bar.getAttribute('role'), 'progressbar');
+        assert.equal(bar.getAttribute('aria-label'), 'Export job progress');
+        assert.equal(bar.getAttribute('aria-valuemin'), '0');
+        assert.equal(bar.getAttribute('aria-valuemax'), '100');
+        assert.equal(bar.getAttribute('aria-valuenow'), '0');
+        const pending = runner.start({ kind: 'export' });
+        assert.equal(bar.getAttribute('aria-valuenow'), undefined);
+        await new Promise(setImmediate);
+        mcdata.emit('progress', { jobId: 'job-1', event: { ratio: 0.5 } });
+        assert.equal(bar.getAttribute('aria-valuenow'), '50');
+        mcdata.emit('progress', { jobId: 'job-1', event: { ratio: 1 } });
+        assert.notEqual(bar.getAttribute('aria-valuenow'), '100');
+        mcdata.emit('progress', { jobId: 'job-1', event: { phase: 'upload' } });
+        assert.equal(bar.getAttribute('aria-valuenow'), undefined);
+        mcdata.emit(terminal === 'error' ? 'error' : 'complete', {
+            jobId: 'job-1',
+            exitCode: terminal === 'nonzero' ? 1 : 0,
+            cancelled: terminal === 'cancel',
+            message: 'Failed',
+        });
+        await pending;
+        assert.equal(bar.getAttribute('aria-valuenow'), terminal === 'success' ? '100' : '0');
+        assert.equal(bar.firstElementChild.style.width, terminal === 'success' ? '100%' : '0%');
+    });
+}
 
 test('nonzero unverified completion never displays success', async () => {
     const { runner, mcdata } = loadJobRunner();

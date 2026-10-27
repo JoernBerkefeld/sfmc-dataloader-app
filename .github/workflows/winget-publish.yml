@@ -1,12 +1,17 @@
 name: Submit to winget
 
-# Opens/updates a pull request in microsoft/winget-pkgs for each published
-# release using wingetcreate. Optional: it only runs when a WINGET_TOKEN secret
-# (a classic PAT with `public_repo` that can fork winget-pkgs) is configured, so
-# the release itself never depends on winget.
+# Called only after the installer build/upload matrix succeeds. Submission is
+# optional: WINGET_TOKEN is a classic PAT with `public_repo` that can fork
+# microsoft/winget-pkgs. A missing token skips successfully; real failures fail.
 on:
-    release:
-        types: [published]
+    workflow_call:
+        inputs:
+            release-tag:
+                required: true
+                type: string
+        secrets:
+            WINGET_TOKEN:
+                required: false
 
 jobs:
     winget:
@@ -17,13 +22,17 @@ jobs:
             - name: Submit new version to winget-pkgs
               env:
                   WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+                  RELEASE_TAG: ${{ inputs.release-tag }}
               run: |
+                  $ErrorActionPreference = 'Stop'
                   if (-not $env:WINGET_TOKEN) {
                       Write-Host 'WINGET_TOKEN not set — skipping winget submission.'
                       exit 0
                   }
-                  $version = '${{ github.event.release.tag_name }}'.TrimStart('v')
-                  $installerUrl = "https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/${{ github.event.release.tag_name }}/sfmc-dataloader-app-$version-win-x64.exe"
+                  $version = $env:RELEASE_TAG.TrimStart('v')
+                  $installerUrl = "https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/$env:RELEASE_TAG/sfmc-dataloader-app-$version-win-x64.exe"
+                  # Fail before submission if the expected published installer is missing.
+                  Invoke-WebRequest -Uri $installerUrl -Method Head
                   # wingetcreate downloads the installer, computes the SHA256 and
                   # opens a PR against microsoft/winget-pkgs from the existing manifest.
                   Invoke-WebRequest -Uri 'https://aka.ms/wingetcreate/latest' -OutFile wingetcreate.exe
@@ -32,3 +41,4 @@ jobs:
                       --urls $installerUrl `
                       --submit `
                       --token $env:WINGET_TOKEN
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

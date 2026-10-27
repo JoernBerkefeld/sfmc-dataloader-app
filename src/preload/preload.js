@@ -20,6 +20,7 @@ const CHANNELS = {
     JOB_CANCEL: 'job:cancel',
 
     SETTINGS_GET: 'settings:get',
+    SETTINGS_SET_TRANSFER_DEFAULTS: 'settings:setTransferDefaults',
     SETTINGS_SET_CONSENT: 'settings:setConsent',
     SETTINGS_SET_PROJECT_ROOT: 'settings:setProjectRoot',
 
@@ -135,21 +136,29 @@ const api = {
      * asked yet — drives the first-run consent prompt) and projectRoot is the
      * last selected project folder (empty when never set).
      *
-     * @returns {Promise.<{ clientId: string, consent: (boolean | undefined), version: string, projectRoot: string }>}
+     * @returns {Promise.<{ clientId: string, consent: (boolean | undefined), version: string, projectRoot: string, transferDefaults: object, persistence: { saved: boolean, error: (string | undefined) } }>}
      */
     getSettings: () => ipcRenderer.invoke(CHANNELS.SETTINGS_GET),
     /**
-     * Records the user's optional-telemetry choice.
+     * Replaces safe transfer defaults; never stores clear or risk acknowledgement.
+     *
+     * @param {{ format: string, git: boolean, mode: string, backupBeforeImport: boolean, skipEmptyLines: boolean, debug: boolean }} value
+     * @returns {Promise.<object>} settings snapshot including transferDefaults and persistence
+     */
+    setTransferDefaults: (value) =>
+        ipcRenderer.invoke(CHANNELS.SETTINGS_SET_TRANSFER_DEFAULTS, value),
+    /**
+     * Records the user's choice for ALL telemetry; affirmative consent requires a saved write.
      *
      * @param {boolean} value - true to opt in, false to opt out
-     * @returns {Promise.<{ clientId: string, consent: boolean, version: string, projectRoot: string }>}
+     * @returns {Promise.<{ clientId: string, consent: (boolean | undefined), version: string, projectRoot: string, transferDefaults: object, firstConsentedRun: boolean, persistence: { saved: boolean, error: (string | undefined) } }>}
      */
     setTelemetryConsent: (value) => ipcRenderer.invoke(CHANNELS.SETTINGS_SET_CONSENT, value),
     /**
      * Persists the last selected project folder so it is restored next launch.
      *
      * @param {string} value - absolute path to the project folder
-     * @returns {Promise.<{ clientId: string, consent: (boolean | undefined), version: string, projectRoot: string }>}
+     * @returns {Promise.<{ clientId: string, consent: (boolean | undefined), version: string, projectRoot: string, transferDefaults: object, persistence: { saved: boolean, error: (string | undefined) } }>}
      */
     setProjectRoot: (value) => ipcRenderer.invoke(CHANNELS.SETTINGS_SET_PROJECT_ROOT, value),
 

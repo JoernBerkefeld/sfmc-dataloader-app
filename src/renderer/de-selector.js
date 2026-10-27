@@ -32,6 +32,10 @@
         #request = 0;
         #provenance;
         #unsubscribe;
+        #search;
+        #selectionStatus;
+        #loading = false;
+        #rows = [];
         /**
          * @type {HTMLElement}
          */
@@ -102,8 +106,25 @@
             this.#checkList = element('div', { class: 'de-checklist' });
             this.#listWrap = element('div', { class: 'de-list-mode' });
             const listActions = element('div', { class: 'form-actions' });
-            listActions.append(loadButton);
-            this.#listWrap.append(listActions, this.#listStatus, this.#checkList);
+            const selectVisible = button('Select visible', { variant: 'btn-secondary' });
+            const clearSelection = button('Clear selection', { variant: 'btn-secondary' });
+            selectVisible.addEventListener('click', () => this.#setSelection(true));
+            clearSelection.addEventListener('click', () => this.#setSelection(false));
+            listActions.append(loadButton, selectVisible, clearSelection);
+            this.#search = /** @type {HTMLInputElement} */ (element('input'));
+            this.#search.type = 'search';
+            this.#search.placeholder = 'Search by name or key';
+            this.#search.addEventListener('input', () => this.#updateSelection());
+            this.#selectionStatus = element('p', { class: 'muted' });
+            this.#selectionStatus.setAttribute('aria-live', 'polite');
+            this.#listWrap.append(
+                listActions,
+                field('Search Data Extensions', this.#search),
+                this.#listStatus,
+                this.#selectionStatus,
+                this.#checkList,
+            );
+            this.#updateSelection();
 
             // manual mode
             this.#manualArea = /** @type {HTMLTextAreaElement} */ (element('textarea'));
@@ -137,9 +158,14 @@
          * @returns {Promise.<void>}
          */
         async #loadList() {
-            this.invalidate();
-            const request = this.#request;
             const provenance = this.#currentProvenance();
+            if (this.#provenance !== provenance) {
+                this.invalidate();
+            }
+            const selected = new Set(
+                this.#rows.filter(({ box }) => box.checked).map(({ box }) => box.value),
+            );
+            const request = ++this.#request;
             const projectRoot = this.#getProjectRoot();
             if (!projectRoot) {
                 toast('Select a project folder first.', 'warn');
@@ -150,13 +176,25 @@
                 toast('Choose a Business Unit first.', 'warn');
                 return;
             }
-            this.#checkList.replaceChildren();
+            this.#loading = true;
+            for (const { box } of this.#rows) {
+                box.disabled = true;
+            }
             this.#listStatus.textContent = 'Loading Data Extensions…';
             const result = await globalObject.McConnectionData.listDeItems(projectRoot, credBu);
-            if (request !== this.#request || provenance !== this.#currentProvenance()) {
+            if (request !== this.#request) {
                 return;
             }
+            if (provenance !== this.#currentProvenance()) {
+                this.invalidate();
+                return;
+            }
+            this.#loading = false;
+            this.#checkList.replaceChildren();
+            this.#rows = [];
+            this.#updateSelection();
             if (!result.ok) {
+                this.#provenance = undefined;
                 this.#listStatus.textContent = 'Failed to load: ' + result.error;
                 return;
             }
@@ -170,11 +208,58 @@
                 const box = /** @type {HTMLInputElement} */ (element('input'));
                 box.type = 'checkbox';
                 box.value = item.key;
+                box.checked = selected.has(item.key);
+                box.addEventListener('change', () => this.#updateSelection());
                 const labelText = item.name === item.key ? item.name : `${item.name} (${item.key})`;
                 const row = element('label', { class: 'de-check' });
                 row.append(box, element('span', { text: labelText }));
                 this.#checkList.append(row);
+                this.#rows.push({ box, row, search: `${item.name}\n${item.key}`.toLowerCase() });
             }
+            this.#updateSelection();
+        }
+
+        /**
+         * Filters locally without losing hidden selections and reports the full count.
+         *
+         * @returns {void}
+         */
+        #updateSelection() {
+            const query = this.#search.value.trim().toLowerCase();
+            let visible = 0;
+            let selected = 0;
+            for (const entry of this.#rows) {
+                entry.row.hidden = !entry.search.includes(query);
+                if (!entry.row.hidden) {
+                    visible++;
+                }
+                if (entry.box.checked) {
+                    selected++;
+                }
+            }
+            this.#selectionStatus.textContent = `${selected} selected · ${visible} of ${this.#rows.length} visible`;
+        }
+
+        /**
+         * Selects visible rows or clears all selections, including hidden rows.
+         *
+         * @param {boolean} checked whether to select visible rows
+         * @returns {void}
+         */
+        #setSelection(checked) {
+            if (this.#provenance !== this.#currentProvenance()) {
+                this.invalidate();
+                return;
+            }
+            if (this.#loading) {
+                return;
+            }
+            for (const { box, row } of this.#rows) {
+                if (!checked || !row.hidden) {
+                    box.checked = checked;
+                }
+            }
+            this.#updateSelection();
         }
 
         /**
@@ -193,7 +278,11 @@
         invalidate() {
             this.#request++;
             this.#provenance = undefined;
+            this.#loading = false;
+            this.#rows = [];
+            this.#search.value = '';
             this.#checkList.replaceChildren();
+            this.#updateSelection();
             this.#listStatus.textContent = 'Load the list to choose DEs.';
         }
 
@@ -232,6 +321,9 @@
                 throw new Error(
                     'Load the Data Extension list for the current project and Business Unit.',
                 );
+            }
+            if (this.#loading) {
+                throw new Error('Wait for the Data Extension list to finish refreshing.');
             }
             const checked = this.#checkList.querySelectorAll('input[type="checkbox"]:checked');
             const keys = [...checked].map((box) => /** @type {HTMLInputElement} */ (box).value);

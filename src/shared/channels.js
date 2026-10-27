@@ -26,6 +26,7 @@ const CHANNELS = {
     // snapshot (clientId, consent tri-state, version); SET_CONSENT records the
     // user's opt-in/opt-out for optional usage telemetry.
     SETTINGS_GET: 'settings:get',
+    SETTINGS_SET_TRANSFER_DEFAULTS: 'settings:setTransferDefaults',
     SETTINGS_SET_CONSENT: 'settings:setConsent',
     // Persists the last selected project folder so it is restored on next launch.
     SETTINGS_SET_PROJECT_ROOT: 'settings:setProjectRoot',

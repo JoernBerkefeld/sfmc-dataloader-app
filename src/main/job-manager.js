@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const { performance } = require('node:perf_hooks');
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const { utilityProcess } = require('electron');
@@ -45,6 +46,7 @@ class JobManager {
          * @type {Map<string, {child: import('electron').UtilityProcess, started: boolean, cancelling: boolean, outcome?: {channel: string, payload: object}}> }
          */
         this._jobs = new Map();
+        this._startsBlocked = false;
         /**
          * @type {Map<string, { kind: string, peakRows: number }>}
          */
@@ -98,6 +100,10 @@ class JobManager {
                 break;
             }
             case 'complete': {
+                const meta = this._jobMeta.get(jobId);
+                if (meta && message.exitCode !== 0) {
+                    meta.errorCategory = 'job_failed';
+                }
                 state.outcome = {
                     channel: CHANNELS.JOB_COMPLETE,
                     payload: { jobId, exitCode: message.exitCode },
@@ -106,6 +112,12 @@ class JobManager {
                 break;
             }
             case 'error': {
+                const meta = this._jobMeta.get(jobId);
+                if (meta) {
+                    meta.errorCategory = 'worker_error';
+                    meta.errorName = message.telemetry?.error_name;
+                    meta.errorCode = message.telemetry?.error_code;
+                }
                 state.outcome = {
                     channel: CHANNELS.JOB_ERROR,
                     payload: {
@@ -174,10 +186,17 @@ class JobManager {
             return;
         }
         this._jobMeta.delete(jobId);
-        this._analytics?.trackJobOutcome({
+        if (!this._analytics?.acceptsOperation(meta.revision)) {
+            return;
+        }
+        this._analytics.trackJobOutcome({
             kind: meta.kind,
             result,
             rowCount: meta.peakRows,
+            durationMs: performance.now() - meta.startedAt,
+            errorCategory: meta.errorCategory,
+            errorName: meta.errorName,
+            errorCode: meta.errorCode,
         });
     }
 
@@ -186,10 +205,11 @@ class JobManager {
      * values are counts/enums; nothing identifying is derived from the job.
      *
      * @param {object} job - structured McdataJob
+     * @param {number | undefined} revision - consent at job start
      * @returns {Promise.<void>}
      */
-    async #trackJobStart(job) {
-        if (!this._analytics) {
+    async #trackJobStart(job, revision) {
+        if (!this._analytics?.acceptsOperation(revision)) {
             return;
         }
         const deKeys = Array.isArray(job.deKeys) ? job.deKeys : [];
@@ -214,7 +234,10 @@ class JobManager {
             // Sum file sizes asynchronously so stat() never blocks; fire the event
             // once sizes are known. A stat failure contributes 0 bytes.
             const totalBytes = await this.#sumFileSizes(filePaths);
-            this._analytics?.trackImport({
+            if (!this._analytics.acceptsOperation(revision)) {
+                return;
+            }
+            this._analytics.trackImport({
                 format,
                 deCount,
                 fileCount: filePaths.length,
@@ -256,6 +279,11 @@ class JobManager {
      * @returns {{ jobId: string }}
      */
     start(job) {
+        if (this._startsBlocked) {
+            throw new Error(
+                'A cancellation, close or update confirmation is in progress. Try again afterwards.',
+            );
+        }
         if (this._jobs.size > 0) {
             throw new Error(
                 'A job is still starting, running or stopping. Wait for it to exit before starting a transfer or saving a connection.',
@@ -268,8 +296,15 @@ class JobManager {
         });
         const state = { child, started: false, cancelling: false, outcome: undefined };
         this._jobs.set(jobId, state);
-        this._jobMeta.set(jobId, { kind: job?.kind, peakRows: 0 });
-        this.#trackJobStart(job);
+        const revision = this._analytics?.beginOperation();
+        this._jobMeta.set(jobId, {
+            kind: job?.kind,
+            peakRows: 0,
+            startedAt: performance.now(),
+            revision,
+            errorCategory: 'worker_exit',
+        });
+        this.#trackJobStart(job, revision);
 
         child.on('message', (message) => {
             this.#handleWorkerMessage(jobId, job, message);
@@ -333,14 +368,57 @@ class JobManager {
     }
 
     /**
-     * Kills every running job (used on app shutdown).
+     * Includes starting and stopping workers until their actual exit.
      *
+     * @returns {boolean}
+     */
+    hasActiveJobs() {
+        return this._jobs.size > 0;
+    }
+
+    /**
+     * Checks cancellation ownership before showing a confirmation.
+     *
+     * @param {string} jobId
+     * @returns {boolean}
+     */
+    hasJob(jobId) {
+        return this._jobs.has(jobId);
+    }
+
+    /**
+     * Reserves the single-job slot while a main-process decision is pending.
+     *
+     * @param {boolean} blocked
      * @returns {void}
      */
-    cancelAll() {
-        for (const jobId of this._jobs.keys()) {
-            this.cancel(jobId);
+    setStartsBlocked(blocked) {
+        this._startsBlocked = blocked;
+    }
+
+    /**
+     * Stops owned workers and waits for actual exit. Failed kills keep the app open.
+     *
+     * @returns {Promise.<boolean>}
+     */
+    async cancelAll() {
+        const exits = [];
+        for (const [jobId, state] of this._jobs) {
+            const { promise, resolve } = Promise.withResolvers();
+            state.child.once('exit', resolve);
+            try {
+                if (!this.cancel(jobId)) {
+                    state.child.removeListener('exit', resolve);
+                    return false;
+                }
+            } catch (ex) {
+                state.child.removeListener('exit', resolve);
+                throw ex;
+            }
+            exits.push(promise);
         }
+        await Promise.all(exits);
+        return true;
     }
 }
 

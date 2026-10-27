@@ -41,7 +41,9 @@ test('import checkbox defaults off and routes checked state across import modes'
                 return node;
             },
             checkbox: (label, checked) => {
-                const check = { label, input: { checked }, wrap: element('checkbox') };
+                const input = element('input');
+                input.checked = checked;
+                const check = { label, input, wrap: element('checkbox') };
                 checks.push(check);
                 return check;
             },
@@ -61,6 +63,9 @@ test('import checkbox defaults off and routes checked state across import modes'
             getValue() {
                 return 'Org/BU';
             }
+            getValues() {
+                return ['Org/Target'];
+            }
         },
         McDeSelector: class {
             element = element('de');
@@ -70,6 +75,9 @@ test('import checkbox defaults off and routes checked state across import modes'
             }
         },
         JobRunner: class {
+            static subscribeActive(listener) {
+                listener();
+            }
             element = element('runner');
             async start(job) {
                 jobs.push(job);
@@ -91,7 +99,6 @@ test('import checkbox defaults off and routes checked state across import modes'
     assert.equal(jobs.at(-1).skipEmptyLines, false);
     assert.equal(buildMcdataArgv(jobs.at(-1)).includes('--skip-empty-lines'), false);
     checkbox.input.checked = true;
-    nodes.find((node) => node.tag === 'textarea').value = 'Org/Target';
     for (const mode of ['singleDe', 'singleFile', 'crossFile', 'crossApi', 'singleDe']) {
         selects[0].value = mode;
         selects[0].listeners.change();

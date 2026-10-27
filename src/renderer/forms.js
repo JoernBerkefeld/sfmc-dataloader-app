@@ -97,7 +97,9 @@
     function directoryPicker(options) {
         const text = input({ placeholder: (options && options.placeholder) || 'Choose a folder…' });
         text.readOnly = true;
+        text.setAttribute('aria-label', 'Selected folder');
         const browse = button('Browse…', { variant: 'btn-secondary' });
+        browse.setAttribute('aria-label', 'Browse for folder');
         browse.addEventListener('click', async () => {
             const chosen = await globalObject.mcdata.chooseDirectory();
             if (chosen) {
@@ -130,28 +132,58 @@
         let files = [];
         const text = input({ placeholder: 'No files selected' });
         text.readOnly = true;
+        text.setAttribute('aria-label', 'Selected import files');
         const browse = button('Browse…', { variant: 'btn-secondary' });
+        browse.setAttribute('aria-label', 'Browse for import files');
         const note = element('span', { class: 'field-hint muted' });
-        browse.addEventListener('click', async () => {
-            const chosen = await globalObject.mcdata.chooseFiles(options || {});
-            if (chosen && chosen.length > 0) {
-                files = chosen;
-                const summary = fileSize.summarizeFiles(files);
+        const selectedFiles = element('ul', { class: 'selected-files' });
+        const clearFiles = button('Clear files', { variant: 'btn-secondary' });
+        clearFiles.disabled = true;
+        const renderFiles = () => {
+            selectedFiles.replaceChildren();
+            for (const [index, file] of files.entries()) {
+                const item = element('li', {
+                    text: `${file.path} (${fileSize.formatBytes(file.size)})`,
+                });
+                const remove = button('Remove', { variant: 'btn-secondary' });
+                remove.setAttribute('aria-label', `Remove ${file.path}`);
+                remove.addEventListener('click', () => {
+                    files = files.filter((_file, position) => position !== index);
+                    renderFiles();
+                });
+                item.append(remove);
+                selectedFiles.append(item);
+            }
+            const summary = fileSize.summarizeFiles(files);
+            text.value = '';
+            if (files.length > 0) {
                 text.value =
                     files.length === 1
                         ? `${files[0].path}  (${fileSize.formatBytes(files[0].size)})`
                         : `${files.length} files selected  (${summary.totalText} total)`;
-                note.textContent = summary.hasLargeFile
-                    ? `Large import — largest file ${fileSize.formatBytes(summary.largestBytes)}. ` +
-                      'It will stream in batches; keep the app open until it finishes.'
-                    : '';
-                note.classList.toggle('warn', summary.hasLargeFile);
+            }
+            note.textContent = summary.hasLargeFile
+                ? `Large import — largest file ${fileSize.formatBytes(summary.largestBytes)}. ` +
+                  'It will stream in batches; keep the app open until it finishes.'
+                : '';
+            note.classList.toggle('warn', summary.hasLargeFile);
+            clearFiles.disabled = files.length === 0;
+        };
+        clearFiles.addEventListener('click', () => {
+            files = [];
+            renderFiles();
+        });
+        browse.addEventListener('click', async () => {
+            const chosen = await globalObject.mcdata.chooseFiles(options || {});
+            if (chosen && chosen.length > 0) {
+                files = chosen.map((file) => ({ ...file }));
+                renderFiles();
             }
         });
         const row = element('div', { class: 'picker' });
-        row.append(text, browse);
+        row.append(text, browse, clearFiles);
         const wrap = element('div', { class: 'file-picker' });
-        wrap.append(row, note);
+        wrap.append(row, selectedFiles, note);
         return {
             wrap,
             getFiles: () => files.map((file) => file.path),

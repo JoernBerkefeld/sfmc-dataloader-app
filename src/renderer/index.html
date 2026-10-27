@@ -18,7 +18,7 @@
             <span class="project-indicator muted" id="project-label">No project folder selected</span>
         </header>
 
-        <nav class="tabs" id="tabs">
+        <nav class="tabs" id="tabs" aria-label="Main navigation">
             <button class="tab active" data-view="connections">Connections</button>
             <button class="tab" data-view="export">Export</button>
             <button class="tab" data-view="import">Import</button>
@@ -35,6 +35,13 @@
                 &times;
             </button>
         </div>
+
+        <section id="active-job" class="active-job" aria-label="Active job" hidden>
+            <span id="active-job-status" role="status" aria-live="polite" aria-atomic="true"></span>
+            <button id="active-job-return" class="btn btn-secondary" type="button">
+                Return to running job
+            </button>
+        </section>
 
         <main id="view" class="view"></main>
 

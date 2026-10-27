@@ -20,6 +20,11 @@
         if (!container || !screen) {
             return;
         }
+        for (const tab of document.querySelectorAll('.tab')) {
+            const isActive = tab.dataset.view === view;
+            tab.classList.toggle('active', isActive);
+            tab.setAttribute('aria-current', isActive ? 'page' : 'false');
+        }
         if (activeView === view) {
             return;
         }
@@ -45,13 +50,44 @@
     function initTabs() {
         const tabs = document.querySelectorAll('.tab');
         for (const tab of tabs) {
-            tab.addEventListener('click', () => {
-                for (const other of tabs) {
-                    other.classList.toggle('active', other === tab);
-                }
-                activate(tab.dataset.view);
-            });
+            tab.addEventListener('click', () => activate(tab.dataset.view));
         }
+    }
+
+    /**
+     * Keeps active work reachable without remounting its screen or runner.
+     *
+     * @returns {void}
+     */
+    function initActiveJob() {
+        const banner = document.querySelector('#active-job');
+        const status = document.querySelector('#active-job-status');
+        const button = document.querySelector('#active-job-return');
+        if (!banner || !status || !button) {
+            return;
+        }
+        let current;
+        globalObject.JobRunner.subscribeActive((job) => {
+            current = job;
+            banner.hidden = !job;
+            if (job) {
+                status.textContent = `${job.label}: ${job.status}`;
+                button.textContent = `Return to ${job.label.toLowerCase()} job`;
+            } else {
+                status.textContent = '';
+                // Do not strand keyboard focus in a newly hidden banner.
+                if (document.activeElement === button) {
+                    document.querySelector('.tab.active')?.focus();
+                }
+            }
+        });
+        button.addEventListener('click', () => {
+            if (!current) {
+                return;
+            }
+            activate(current.view);
+            mounted.get(current.view)?.querySelector('.job-runner')?.focus();
+        });
     }
 
     /**
@@ -108,6 +144,7 @@
     addEventListener('DOMContentLoaded', async () => {
         initTabs();
         initProjectLabel();
+        initActiveJob();
         showRuntimeInfo();
         globalObject.McUpdates.init();
         // Restore the persisted project folder before mounting so the connections

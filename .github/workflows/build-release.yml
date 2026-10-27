@@ -21,7 +21,7 @@ jobs:
                       buildArgs: --win
                     - os: macos-latest
                       platform: mac
-                      # macOS: dmg (self-updating via electron-updater).
+                      # macOS: DMG installers + ZIP archives for electron-updater.
                       buildArgs: --mac
                     - os: ubuntu-latest
                       platform: linux
@@ -53,15 +53,8 @@ jobs:
             - run: npm test --no-workspaces
               if: runner.os != 'Linux'
 
-            # Inject the GA4 Measurement Protocol credentials into the bundle so
-            # in-app telemetry can send events. Writes a gitignored file that
-            # electron-builder packs into the asar. When the secrets are unset
-            # (forks / PRs) the script skips and the build ships telemetry-off.
-            - name: Inject analytics config
-              run: node scripts/write-analytics-config.mjs
-              env:
-                  GA4_MEASUREMENT_ID: ${{ secrets.GA4_MEASUREMENT_ID }}
-                  GA4_API_SECRET: ${{ secrets.GA4_API_SECRET }}
+            # Public PostHog EU ingestion configuration ships in source.
+            # No telemetry credentials or personal API keys are injected at release.
 
             # rpm target needs rpmbuild on the runner (not installed by default).
             - name: Install rpm tooling (Linux)
@@ -105,6 +98,15 @@ jobs:
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+
+    winget:
+        needs: build
+        if: ${{ !github.event.release.prerelease }}
+        uses: ./.github/workflows/winget-publish.yml
+        with:
+            release-tag: ${{ github.event.release.tag_name }}
+        secrets:
+            WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
 
     # After every installer has been uploaded to the release, refresh the
     # in-repo package-manager seeds (Scoop / Flatpak / AUR / winget) so their

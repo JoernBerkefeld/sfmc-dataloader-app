@@ -21,4 +21,13 @@ jobs:
                   node-version: ${{ matrix.node }}
             - run: npm ci --no-workspaces
             - run: npm run lint
-            - run: npm test
+            - name: Initialize Electron before parallel tests
+              run: node -e "console.log(require('electron'))"
+            - name: Configure Linux Electron sandbox
+              shell: bash
+              run: |
+                  electron_path=$(node -p "require('electron')")
+                  sandbox_path="$(dirname "$electron_path")/chrome-sandbox"
+                  sudo chown root:root "$sandbox_path"
+                  sudo chmod 4755 "$sandbox_path"
+            - run: xvfb-run -a npm test --no-workspaces

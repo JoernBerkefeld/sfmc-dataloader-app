@@ -17,6 +17,7 @@
 // progress lines a multi-GB export/import produces.
 
 const { parseProgressLine } = require('./parse-progress');
+const { failureParams } = require('./telemetry-events');
 
 /**
  * Coerces console arguments to a single space-joined string, matching how the
@@ -90,7 +91,17 @@ function createJobRunner({ post, buildArgv, importDataloader, console: target })
         try {
             argv = buildArgv(job);
         } catch (ex) {
-            post({ type: 'error', message: ex?.message ?? String(ex), stack: ex?.stack });
+            post({
+                type: 'error',
+                message: ex?.message ?? String(ex),
+                stack: ex?.stack,
+                telemetry: failureParams({
+                    result: 'error',
+                    errorCategory: 'worker_error',
+                    errorName: ex?.name,
+                    errorCode: ex?.code,
+                }),
+            });
             return;
         }
 
@@ -102,7 +113,17 @@ function createJobRunner({ post, buildArgv, importDataloader, console: target })
             post({ type: 'complete', exitCode: typeof exitCode === 'number' ? exitCode : 0 });
         } catch (ex) {
             restore();
-            post({ type: 'error', message: ex?.message ?? String(ex), stack: ex?.stack });
+            post({
+                type: 'error',
+                message: ex?.message ?? String(ex),
+                stack: ex?.stack,
+                telemetry: failureParams({
+                    result: 'error',
+                    errorCategory: 'worker_error',
+                    errorName: ex?.name,
+                    errorCode: ex?.code,
+                }),
+            });
         }
     };
 }

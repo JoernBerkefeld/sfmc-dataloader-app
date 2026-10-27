@@ -6,21 +6,8 @@
 // tokens. Exposed as McScreens.export.
 (function initExportScreen(globalObject) {
     const { element, toast } = globalObject.McUI;
-    const { field, input, select, checkbox, button, directoryPicker } = globalObject.McForms;
+    const { field, input, select, checkbox, button } = globalObject.McForms;
     const { JOB_KIND } = globalObject.mcdata;
-
-    /**
-     * Parses a textarea of comma/newline separated tokens into a trimmed list.
-     *
-     * @param {string} raw
-     * @returns {string[]}
-     */
-    function parseList(raw) {
-        return raw
-            .split(/[\n,]+/)
-            .map((token) => token.trim())
-            .filter((token) => token.length > 0);
-    }
 
     /**
      * Mounts the export screen into the given container.
@@ -39,33 +26,48 @@
             hint: 'the credential/BU to export from',
         });
 
-        const sourcesArea = /** @type {HTMLTextAreaElement} */ (element('textarea'));
-        sourcesArea.rows = 3;
-        sourcesArea.placeholder = 'MyOrg/BU-A\nMyOrg/BU-B';
-        const sourcesField = field(
-            'Sources (one per line)',
-            sourcesArea,
-            'multi-BU: --from per line (credential/BU)',
-        );
+        const sourcesPicker = new globalObject.McBuPicker({
+            label: 'Source Business Units',
+            multiple: true,
+            hint: 'Select across saved credentials or enter tokens manually.',
+        });
+        const sourcesField = element('div');
+        const listSource = element('p', { class: 'muted' });
+        sourcesField.append(sourcesPicker.element, listSource);
         sourcesField.style.display = 'none';
 
-        const outputPicker = directoryPicker({ placeholder: 'Defaults to the project folder' });
+        const projectInfo = element('p', { class: 'field-hint muted' });
+        const updateProjectInfo = () => {
+            const projectRoot = globalObject.McState.get().projectRoot;
+            projectInfo.textContent = projectRoot
+                ? `Export project: ${projectRoot}. Output uses this selected project.`
+                : 'No project selected. Choose a project in Connections before exporting.';
+        };
+        globalObject.McState.subscribe(updateProjectInfo);
+        updateProjectInfo();
         const deSelector = new globalObject.McDeSelector({
-            getProjectRoot: () =>
-                outputPicker.input.value || globalObject.McState.get().projectRoot,
-            getContext: () => JSON.stringify([multi.input.checked, parseList(sourcesArea.value)]),
+            getProjectRoot: () => globalObject.McState.get().projectRoot,
+            getContext: () => JSON.stringify([multi.input.checked, sourcesPicker.getValues()]),
             getCredBu: () => {
                 if (multi.input.checked) {
-                    return parseList(sourcesArea.value)[0] ?? '';
+                    return sourcesPicker.getValues()[0] ?? '';
                 }
                 return sourcePicker.getValue();
             },
         });
 
         sourcePicker.onChange(() => deSelector.invalidate());
-        sourcesArea.addEventListener('input', () => deSelector.invalidate());
-        globalObject.McScreens.export.activate = () => void sourcePicker.refresh();
-
+        const updateListSource = () => {
+            const first = sourcesPicker.getValue();
+            listSource.textContent = first
+                ? `DE list source: ${first} (first source BU). Other source BUs have not been validated.`
+                : 'The first selected source BU supplies the DE list. Other source BUs are not validated by this list.';
+        };
+        sourcesPicker.onChange(() => {
+            deSelector.invalidate();
+            updateListSource();
+        });
+        updateListSource();
         const formatSelect = select(
             [
                 { value: 'csv', label: 'CSV' },
@@ -78,19 +80,74 @@
 
         const jsonPretty = checkbox('Pretty-print JSON', false);
         const git = checkbox('Stable filenames for git (--git)', false);
+        const debug = checkbox('Debug logs (may contain sensitive API data)', false);
+        let defaultsRevision = 0;
+        for (const control of [formatSelect, git.input, debug.input]) {
+            control.addEventListener('change', () => defaultsRevision++);
+        }
+        globalObject.McScreens.export.activate = async () => {
+            void sourcePicker.refresh();
+            void sourcesPicker.refresh();
+            const revision = defaultsRevision;
+            try {
+                const settings = await globalObject.mcdata.getSettings();
+                if (
+                    revision === defaultsRevision &&
+                    !runner.isRunning &&
+                    settings?.transferDefaults
+                ) {
+                    const defaults = settings.transferDefaults;
+                    formatSelect.value = defaults.format;
+                    git.input.checked = defaults.git;
+                    debug.input.checked = defaults.debug;
+                }
+            } catch {
+                toast(
+                    'Could not load transfer defaults; current run options are unchanged.',
+                    'warn',
+                );
+            }
+        };
 
         const maxRows = input({ type: 'number', placeholder: 'e.g. 100000' });
+        maxRows.min = '1';
+        maxRows.step = '1';
         const maxRowsField = field('Max rows per file', maxRows, 'optional — splits large exports');
+        const maxRowsError = element('span', {
+            attrs: { id: 'export-max-rows-error' },
+            class: 'field-hint warn',
+        });
+        maxRowsError.setAttribute('aria-live', 'polite');
+        maxRows.setAttribute('aria-describedby', 'export-max-rows-error');
+        maxRowsField.append(maxRowsError);
+        const validateMaxRows = () => {
+            const value = maxRows.value.trim();
+            const isValid =
+                !maxRows.validity?.badInput &&
+                (value === '' || (Number.isSafeInteger(Number(value)) && Number(value) > 0));
+            maxRowsError.textContent = isValid
+                ? ''
+                : 'Enter a positive whole number, or leave blank.';
+            maxRows.setAttribute('aria-invalid', String(!isValid));
+            return isValid;
+        };
+        maxRows.addEventListener('input', validateMaxRows);
+        maxRows.addEventListener('change', validateMaxRows);
 
-        outputPicker.input.addEventListener('input', () => deSelector.invalidate());
-        outputPicker.input.addEventListener('change', () => deSelector.invalidate());
-        const outputField = field('Output folder (project root)', outputPicker.wrap);
-
+        let isSubmitting = false;
+        let hasActiveJob = false;
         const runButton = button('Start export');
+        const updateRunButton = () => {
+            runButton.disabled = isSubmitting || hasActiveJob;
+        };
+        globalObject.JobRunner.subscribeActive((active) => {
+            hasActiveJob = Boolean(active);
+            updateRunButton();
+        });
         const controls = element('div', { class: 'form-actions' });
         controls.append(runButton);
 
-        const runner = new globalObject.JobRunner();
+        const runner = new globalObject.JobRunner({ view: 'export', label: 'Export' });
 
         multi.input.addEventListener('change', () => {
             deSelector.invalidate();
@@ -100,7 +157,12 @@
         });
 
         runButton.addEventListener('click', async () => {
-            if (runner.isRunning) {
+            if (isSubmitting || hasActiveJob || runner.isRunning) {
+                return;
+            }
+            defaultsRevision++;
+            if (!validateMaxRows()) {
+                maxRows.focus();
                 return;
             }
             let job;
@@ -110,11 +172,13 @@
                 toast(ex && ex.message ? ex.message : String(ex), 'error');
                 return;
             }
-            runButton.setAttribute('disabled', 'true');
+            isSubmitting = true;
+            updateRunButton();
             try {
                 await runner.start(job);
             } finally {
-                runButton.removeAttribute('disabled');
+                isSubmitting = false;
+                updateRunButton();
             }
         });
 
@@ -123,7 +187,10 @@
          */
         function buildJob() {
             const deKeys = deSelector.getKeys();
-            const projectRoot = outputPicker.input.value || globalObject.McState.get().projectRoot;
+            const projectRoot = globalObject.McState.get().projectRoot;
+            if (!projectRoot) {
+                throw new Error('Choose a project in Connections before exporting.');
+            }
 
             /**
              * @type {Record<string, unknown>}
@@ -133,16 +200,17 @@
                 format: formatSelect.value,
                 jsonPretty: jsonPretty.input.checked,
                 git: git.input.checked,
+                debug: debug.input.checked,
             };
             if (projectRoot) {
                 job.projectRoot = projectRoot;
             }
-            if (maxRows.value) {
+            if (maxRows.value.trim()) {
                 job.maxRowsPerFile = Number(maxRows.value);
             }
 
             if (multi.input.checked) {
-                const sources = parseList(sourcesArea.value);
+                const sources = sourcesPicker.getValues();
                 if (sources.length === 0) {
                     throw new Error('Enter at least one source BU.');
                 }
@@ -163,7 +231,7 @@
         formatRow.append(formatField, maxRowsField);
 
         const optionsRow = element('div', { class: 'form-row' });
-        optionsRow.append(jsonPretty.wrap, git.wrap);
+        optionsRow.append(jsonPretty.wrap, git.wrap, debug.wrap);
 
         root.append(
             multi.wrap,
@@ -172,7 +240,7 @@
             deSelector.element,
             formatRow,
             optionsRow,
-            outputField,
+            projectInfo,
             controls,
             runner.element,
         );

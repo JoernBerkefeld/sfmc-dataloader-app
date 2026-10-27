@@ -16,7 +16,7 @@ If you've ever been handed instructions to "install Node, open a terminal, and r
 
 ## What can it do?
 
-- **Export** Data Extension rows to CSV or TSV — from a single Business Unit or several at once.
+- **Export** Data Extension rows to CSV, TSV, or JSON — from a single Business Unit or several at once, with optional pretty-printed JSON and output-file splitting.
 - **Import** rows from a file into a Data Extension — into one BU, or copy data from one BU to another.
 - **Handles very large Data Extensions** (multiple gigabytes) by streaming data straight to and from disk, so your computer doesn't run out of memory.
 - **Keeps you safe** with clear confirmations before anything destructive: you must type to confirm a "clear before import", you can automatically back up a Data Extension before overwriting it, and you get a heads-up before importing very large files.
@@ -27,10 +27,12 @@ If you've ever been handed instructions to "install Node, open a terminal, and r
 
 ## Is it safe with my credentials?
 
-Yes. Your Marketing Cloud client ID and secret are:
-
-- stored in a local configuration file on **your** computer (never sent anywhere except to Salesforce to log in), and
-- **never exposed to other programs** on your machine — the app is built so secrets can't leak onto the system process list, which is a common weakness of command-line tools.
+Your Marketing Cloud client ID and secret are stored in local project
+configuration/auth files and used to authenticate to Salesforce. The app passes
+them to its worker without putting them in command-line arguments or analytics.
+These files are **not an encrypted credential vault**: protect the project folder
+and its backups from other users/programs. Debug logs may contain sensitive API
+data; review them before sharing.
 
 The app window itself is locked down (sandboxed with a strict security policy) and cannot run arbitrary code from the internet.
 
@@ -55,24 +57,75 @@ requests that the worker stop, and the app waits for its actual exit before
 allowing another job. If stopping fails, you can retry Cancel. Cancellation does
 not undo rows already written or restore rows cleared before an import.
 
+Closing the window, quitting, cancelling, or installing an update during a
+starting/running/stopping job requires a main-process confirmation. **Stay open**
+is the safe default. The app waits for local worker exit before proceeding; a
+failed stop leaves it open. Remote work already accepted by Salesforce may
+continue after local cancellation, close, or quit.
+
+### Selecting projects, BUs, DEs, and files
+
+The header shows the selected project folder globally; choose it in **Connections**.
+If the project-folder save fails, it remains selected for this session; use **Use
+this folder** again to retry persistence for the next launch.
+Export also shows the project used for its output. Multi-BU export and cross-BU
+import offer searchable saved-BU checkboxes across credentials, with manual
+`credential/BU` tokens as an advanced fallback. Filtering preserves checked BUs;
+manual entries follow the checked selections and duplicates are removed.
+
+DE lists can be searched by name or key. **Select visible** adds the filtered
+rows; **Clear selection** clears even hidden selections, and the count includes
+hidden checked rows. Changing project, source BU, or transfer mode invalidates
+loaded DE selections; refresh for the new context. Manual keys are explicitly
+unverified. A multi-BU export's DE list comes from the **first selected source BU**
+only: it does not validate the keys against every other source BU. Cross-BU API
+imports use the source BU list; single-BU key imports use the target BU list and
+require matching local export files.
+
+File imports show every selected file with **Remove** and **Clear files** controls.
+Browsing replaces the selection; cancelling the picker preserves it. A file of
+**1 GiB or larger** triggers a warning before import; keep the app open and stay
+connected. Removing a file from the selection does not delete it from disk.
+
+Export's **Max rows per file** accepts a positive safe whole number, or blank for
+unsplit output. Invalid input is labelled inline and prevents submission.
+**Pretty-print JSON** affects JSON exports only.
+
+### Defaults and active jobs
+
+**Settings → Transfer defaults** saves export format (CSV initially), stable
+filenames (off), import mode (upsert), backup before import (on), skip empty lines
+(off), and debug logging (off). Transfer screens allow per-run overrides. Clear
+before import is never saved as a default. If saving fails, the app reports that
+defaults apply only to the current session and offers **Retry saving transfer
+defaults**; do not assume they will survive a restart. Debug logging can capture
+sensitive API data.
+
+The persistent active-job banner remains visible across screens and returns you
+to the owning job, including connection setup. Conflicting transfer/connection
+starts stay disabled until the worker exits. Progress and status are announced
+through labelled live regions; the return button moves focus to the job, and job
+output is keyboard-focusable. Destructive dialogs support keyboard confirmation,
+Escape cancellation, and focus restoration.
+
 On the **Import** screen, **Skip empty lines (CSV/TSV)** is unchecked by default.
 Enable it to ignore unquoted blank or whitespace-only records in CSV/TSV files,
 including Data Extension export files and cross-BU file imports. It leaves values
 unchanged: quoted empty cells, delimiter-only rows, and blank lines inside quoted
 fields remain data. JSON imports, API copies, and exports are unaffected.
 
-> **Note on macOS:** until code-signing certificates are configured, macOS builds are **unsigned**. You may need to right-click the app and choose *Open* the first time to get past Gatekeeper.
+> **Note on macOS:** until code-signing certificates are configured, macOS builds are **unsigned**. You may need to right-click the app and choose _Open_ the first time to get past Gatekeeper.
 
 ### Or install with a package manager
 
 If you'd rather use a package manager, these all install the same app:
 
-| Platform | Command |
-| --- | --- |
-| **Windows** (winget) | `winget install JoernBerkefeld.SFMCDataLoader` |
-| **Windows** (Scoop) | `scoop bucket add joern https://github.com/JoernBerkefeld/scoop-bucket` then `scoop install sfmc-dataloader-app` |
-| **Linux** (Flatpak) | `flatpak install flathub com.joernberkefeld.SfmcDataLoader` |
-| **Arch Linux** (AUR) | `yay -S sfmc-dataloader-app-bin` |
+| Platform             | Command                                                                                                          |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Windows** (winget) | `winget install JoernBerkefeld.SFMCDataLoader`                                                                   |
+| **Windows** (Scoop)  | `scoop bucket add joern https://github.com/JoernBerkefeld/scoop-bucket` then `scoop install sfmc-dataloader-app` |
+| **Linux** (Flatpak)  | `flatpak install flathub com.joernberkefeld.SfmcDataLoader`                                                      |
+| **Arch Linux** (AUR) | `yay -S sfmc-dataloader-app-bin`                                                                                 |
 
 > Package-manager availability rolls out per release; if a channel isn't published yet, use the direct download above. See [`packaging/README.md`](packaging/README.md) for the current status and maintenance details.
 
@@ -80,47 +133,42 @@ If you'd rather use a package manager, these all install the same app:
 
 On **Windows**, **macOS**, and the Linux **AppImage**, the app updates itself: a
 few seconds after launch it checks for a newer release, downloads it in the
-background, and shows a banner offering to **restart & install**. Updates never
-interrupt a running export or import. Installs via **deb/rpm/snap**, **Flatpak**,
+background, and shows a banner offering to **restart & install**. Installing during
+an active job requires confirmation and waits for the local worker to exit. Installs via **deb/rpm/snap**, **Flatpak**,
 or your package manager are updated the usual way (`apt`, `dnf`, `snap`,
 `flatpak update`, `winget upgrade`, `scoop update`, …).
 
 ## Telemetry & privacy
 
-The app collects **anonymous product statistics only — never any personal or
-company data.** Full details are in **[PRIVACY.md](PRIVACY.md)**.
+**All analytics is optional, including lifecycle events. Nothing is sent before
+an affirmative consent choice is saved.** Decline the first-run prompt, dismiss
+it with Escape, or turn off **All app telemetry (optional)** in **Settings** to
+use the app without analytics. **No thanks** receives initial focus.
 
-**Always collected** (anonymous, no consent needed):
+Saved consent uses schema version **1**. Legacy enabled choices require renewed
+consent. Failed opt-in saves keep analytics disabled and offer a retry. Opt-out
+immediately discards queued events and aborts in-flight requests, even if saving
+fails; retry saving to persist it for the next launch. Already delivered requests
+cannot be recalled. There is no pre-consent buffering or later replay.
 
-- App install, update, and launch events — to count active installs.
-- App version, operating system + version, CPU architecture, and how the app was
-  installed (e.g. NSIS, dmg, AppImage, snap, Flatpak).
+Consenting packaged runs send events to **PostHog's EU ingestion endpoint**, in
+project **254290**, with `app: 'sfmc-dataloader-app'`; GA4 has been replaced.
+The persisted random installation ID is **pseudonymous, not guaranteed anonymous**.
+PostHog receives ordinary connection metadata, including IP. Provider retention
+and IP/geolocation/processing settings have not been verified here.
 
-The first-run consent dialog initially focuses **No thanks**. Escape dismisses it
-without choosing or enabling optional telemetry; you can decide later in **Settings**.
+The catalogue covers first-consented runs (not installs), consenting launches and
+updates, resolved loader version, export/import usage, job outcomes, and
+configuration/DE-discovery action outcomes. It contains versions, platform fields,
+coarse counts/sizes/durations, closed error categories, project-type presence
+booleans, and primary-language locale where applicable. Job timing excludes user
+prompts; action timing covers the main-process request. Exact p50 latency cannot
+be derived from duration buckets.
 
-**Only if you opt in** (first-run prompt, or the **Settings** tab):
-
-- That an export or import ran, and whether it succeeded.
-- File format (CSV/TSV/JSON) and **coarse buckets** for file size, row count, and
-  number of Data Extensions.
-- Your app language (primary subtag only, e.g. `en`).
-
-**Never collected:** file names, folder paths, file contents, Business Unit
-names, credential names, any SFMC data, or anything that identifies you or your
-organisation.
-
-**Using the app without telemetry:**
-
-- Decline the first-run prompt (or toggle it off in **Settings**) to disable all
-  optional usage events — only the anonymous lifecycle pings remain.
-- Prefer **zero** telemetry of any kind? Use the underlying
-  [`sfmc-dataloader`](https://www.npmjs.com/package/sfmc-dataloader) CLI directly
-  — it has **no telemetry whatsoever**.
-
-Data is ingested through Google Analytics 4's **EU endpoint**. There is no
-uninstall event; inactive installs are simply inferred from the absence of launch
-pings. See [PRIVACY.md](PRIVACY.md) for the complete policy.
+Analytics excludes paths, DE keys and data, BU identities, credentials, raw error
+messages/stacks, logs, and editor inventory. Update checks and Salesforce traffic
+are separate from analytics. See **[PRIVACY.md](PRIVACY.md)** for the event fields,
+timing boundaries, save-failure behavior, and provider caveats.
 
 ---
 
@@ -132,13 +180,13 @@ This is an **Electron** app that wraps the [`sfmc-dataloader`](https://www.npmjs
 
 ### Architecture
 
-| Layer | Location | Responsibility |
-| --- | --- | --- |
-| Main process | `src/main/` | Window lifecycle, dialogs, IPC handlers, spawns the job worker, drives auto-update (`updater.js`) |
-| Preload bridge | `src/preload/` | Allow-listed `window.mcdata` API (contextIsolation, sandbox) |
-| Renderer | `src/renderer/` | UI only; no Node access, talks to the bridge |
-| Job worker | `src/worker/` | Isolated Node process; thin `parentPort` wiring around the shared job runner that drives `sfmc-dataloader` for export/import |
-| Shared | `src/shared/` | Isomorphic helpers reused by main, worker, renderer and tests: IPC channel + job-kind constants, argv builder, progress parser, file-size helpers, update-status state machine, and the injectable job runner (streams logs/progress, reports complete/error) |
+| Layer          | Location        | Responsibility                                                                                                                                                                                                                                                |
+| -------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Main process   | `src/main/`     | Window lifecycle, dialogs, IPC handlers, spawns the job worker, drives auto-update (`updater.js`)                                                                                                                                                             |
+| Preload bridge | `src/preload/`  | Allow-listed `window.mcdata` API (contextIsolation, sandbox)                                                                                                                                                                                                  |
+| Renderer       | `src/renderer/` | UI only; no Node access, talks to the bridge                                                                                                                                                                                                                  |
+| Job worker     | `src/worker/`   | Isolated Node process; thin `parentPort` wiring around the shared job runner that drives `sfmc-dataloader` for export/import                                                                                                                                  |
+| Shared         | `src/shared/`   | Isomorphic helpers reused by main, worker, renderer and tests: IPC channel + job-kind constants, argv builder, progress parser, file-size helpers, update-status state machine, and the injectable job runner (streams logs/progress, reports complete/error) |
 
 The renderer is fully sandboxed (`contextIsolation: true`, `nodeIntegration: false`,
 `sandbox: true`) with a strict Content-Security-Policy. All privileged work happens in the main
@@ -175,7 +223,7 @@ never upload anything (`--publish never`):
 
 ```bash
 npm run dist:win     # NSIS installer (Windows)
-npm run dist:mac     # dmg, x64 + arm64 (macOS)
+npm run dist:mac     # DMG + updater ZIP, x64 + arm64 (macOS)
 npm run dist:linux   # AppImage + deb + rpm + snap
 npm run dist         # all targets for the current OS
 ```
@@ -199,54 +247,51 @@ triggers a three-OS matrix (`windows-latest`, `macos-latest`, `ubuntu-latest`); 
 tests, builds its native installers, and uploads them to that release via electron-builder's GitHub
 publish provider (`--publish always`).
 
-Each release ends up with **seven installers** plus electron-builder's auto-update metadata
-(`latest*.yml` and `.blockmap` files). The Linux `rpm` build installs `rpm`/rpmbuild on the
-runner; the `snap` build runs in a separate, non-fatal step (a snap failure never blocks the
-release):
+The workflow targets **seven installers** plus macOS x64/arm64 updater ZIP archives and
+electron-builder's auto-update metadata (`latest*.yml` and `.blockmap` files). The Linux
+`rpm` build installs `rpm`/rpmbuild on the runner; the `snap` build runs in a separate,
+non-fatal step, so a snap failure may leave that asset absent without failing the workflow:
 
-| Platform | Assets |
-| --- | --- |
-| Windows | `...-win-x64.exe` |
-| macOS | `...-mac-x64.dmg`, `...-mac-arm64.dmg` |
-| Linux | `...-linux-x64.AppImage`, `...-linux-x64.deb`, `...-linux-x64.rpm`, `...-linux-x64.snap` |
+| Platform | Assets                                                                                   |
+| -------- | ---------------------------------------------------------------------------------------- |
+| Windows  | `...-win-x64.exe`                                                                        |
+| macOS    | `...-mac-x64.dmg`, `...-mac-arm64.dmg`, `...-mac-x64.zip`, `...-mac-arm64.zip`           |
+| Linux    | `...-linux-x64.AppImage`, `...-linux-x64.deb`, `...-linux-x64.rpm`, `...-linux-x64.snap` |
 
-Two optional, credential-gated add-ons run alongside the release and never block it:
-
-| Workflow / secret | Effect when configured |
-| --- | --- |
-| `winget-publish.yml` + `WINGET_TOKEN` | Auto-submits each release to `microsoft/winget-pkgs` via `wingetcreate` |
-| `SNAPCRAFT_STORE_CREDENTIALS` secret | `snap` build also pushes to the Snap Store (otherwise the `.snap` is only attached to the release) |
+For stable releases only, after the full installer build/upload matrix succeeds,
+`build-release.yml` calls the reusable `winget-publish.yml` workflow. A missing
+`WINGET_TOKEN` causes a successful skip; with the token configured, `wingetcreate`
+submits to `microsoft/winget-pkgs`, and an actual submission error fails the workflow.
+Snap tooling/build/upload steps remain non-fatal; the snap step also receives
+`SNAPCRAFT_STORE_CREDENTIALS` when configured. These outcomes are distinct: a failing
+post-build winget or manifest-refresh job does not undo assets already uploaded to
+the GitHub Release.
 
 macOS code signing and notarization are optional and driven by repository secrets — when they are
 absent the workflow still succeeds and produces an **unsigned** macOS build:
 
-| Secret | Purpose |
-| --- | --- |
-| `MAC_CSC_LINK` | base64-encoded `.p12` signing certificate (→ `CSC_LINK`) |
-| `MAC_CSC_KEY_PASSWORD` | password for the `.p12` certificate |
-| `APPLE_ID` | Apple ID used for notarization |
-| `APPLE_APP_SPECIFIC_PASSWORD` | app-specific password for that Apple ID |
-| `APPLE_TEAM_ID` | Apple Developer Team ID |
+| Secret                        | Purpose                                                  |
+| ----------------------------- | -------------------------------------------------------- |
+| `MAC_CSC_LINK`                | base64-encoded `.p12` signing certificate (→ `CSC_LINK`) |
+| `MAC_CSC_KEY_PASSWORD`        | password for the `.p12` certificate                      |
+| `APPLE_ID`                    | Apple ID used for notarization                           |
+| `APPLE_APP_SPECIFIC_PASSWORD` | app-specific password for that Apple ID                  |
+| `APPLE_TEAM_ID`               | Apple Developer Team ID                                  |
 
 ### Telemetry configuration
 
-Telemetry is **off unless Google Analytics credentials are injected at build
-time**, so local and forked builds never send anything. The release workflow runs
-`scripts/write-analytics-config.mjs`, which reads two GitHub Actions secrets and
-writes the git-ignored `src/main/analytics-config.generated.json`:
+Development/unpackaged builds disable analytics. Packaged builds use the public
+PostHog ingestion configuration in `src/main/analytics-config.js` (EU batch
+endpoint, project 254290), not GA4 build secrets or generated credentials. A
+packaged fork using that configuration still requires saved affirmative consent;
+being a fork alone does not disable analytics.
 
-| Secret | Purpose |
-| --- | --- |
-| `GA4_MEASUREMENT_ID` | GA4 Measurement ID for the app's data stream |
-| `GA4_API_SECRET` | Measurement Protocol API secret for that stream |
-
-If either secret is missing the script skips file creation and the build ships
-with telemetry fully disabled. Events are sent from the **main process** only,
-non-blocking (deferred, fire-and-forget, timed-out), via GA4's EU endpoint
-(`region1.google-analytics.com`). The PII firewall lives in
-`src/shared/telemetry-events.js`; user-facing wording and the collected-data
-tables are in [PRIVACY.md](PRIVACY.md) — keep all three in sync when telemetry
-changes.
+The main-process sender defers requests, applies a five-second abort timeout,
+drops failures without retry/replay, and discards queued events at shutdown.
+Consent is checked before queuing and again before dispatch; operations spanning
+a consent change are excluded. The payload boundary lives in
+`src/shared/telemetry-events.js`; [PRIVACY.md](PRIVACY.md) documents the catalogue
+and actual call sites. Keep these and the Settings/first-run explanation aligned.
 
 ### Relationship to `sfmc-dataloader`
 

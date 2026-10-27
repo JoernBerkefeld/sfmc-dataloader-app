@@ -47,6 +47,24 @@ body {
     font-size: 12px;
 }
 
+.active-job {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.active-job[hidden] {
+    display: none;
+}
+
+:focus-visible {
+    outline: 2px solid var(--fg);
+    outline-offset: 3px;
+}
+
 .tabs {
     display: flex;
     gap: 2px;

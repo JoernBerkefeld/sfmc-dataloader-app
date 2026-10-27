@@ -47,6 +47,8 @@ function setup() {
             },
         }),
         {
+            beginOperation: () => 0,
+            acceptsOperation: (revision) => revision === 0,
             trackExport() {},
             trackJobOutcome: (outcome) => {
                 outcomes.push(outcome);

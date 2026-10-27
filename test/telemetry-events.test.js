@@ -5,9 +5,45 @@ const assert = require('node:assert/strict');
 
 const events = require('../src/shared/telemetry-events');
 
+test('new parity event builders accept only closed values', () => {
+    const hostile = 'SECRET/F:/customer/key';
+    assert.equal(events.normalizeVersion('3.2.0'), '3.2.0');
+    assert.equal(events.normalizeVersion(hostile), 'unknown');
+    assert.deepEqual(
+        [0, 1000, 10_000, 60_000, 600_000, -1, NaN].map((value) => events.durationBucket(value)),
+        ['<1s', '1-10s', '10-60s', '1-10m', '>=10m', 'unknown', 'unknown'],
+    );
+    const parameters = events.buildActionOutcomeParams({
+        appVersion: '1.2.3',
+        action: hostile,
+        result: 'error',
+        errorCategory: hostile,
+        errorName: hostile,
+        errorCode: hostile,
+        isMcdevProject: hostile,
+        isMcdataProject: true,
+    });
+    assert.equal(JSON.stringify(parameters).includes('SECRET'), false);
+    assert.equal(parameters.action, 'unknown');
+    assert.equal(parameters.error_code, 'other');
+    assert.equal(parameters.is_mcdev_project, false);
+    assert.equal(parameters.is_mcdata_project, true);
+    assert.deepEqual(events.failureParams({ result: 'cancelled', errorName: hostile }), {});
+    assert.deepEqual(
+        events.failureParams({
+            result: 'error',
+            errorCategory: 'worker_error',
+            errorName: 'TypeError',
+            errorCode: 'ENOENT',
+        }),
+        { error_category: 'worker_error', error_name: 'TypeError', error_code: 'ENOENT' },
+    );
+});
+
 test('EVENTS has no uninstall event (churn inferred from missing launches)', () => {
     assert.equal(events.EVENTS.APP_UNINSTALL, undefined);
-    assert.equal(events.EVENTS.APP_INSTALL, 'app_install');
+    assert.equal(events.EVENTS.FIRST_CONSENTED_RUN, 'app_first_consented_run');
+    assert.equal(events.EVENTS.APP_INSTALL, undefined);
     assert.equal(events.EVENTS.APP_UPDATE, 'app_update');
     assert.equal(events.EVENTS.APP_LAUNCH, 'app_launch');
 });

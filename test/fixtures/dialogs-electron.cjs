@@ -47,7 +47,7 @@ async function main() {
         for (const file of ['ui.js', 'forms.js']) {
             await run(fs.readFileSync(path.join(__dirname, '../../src/renderer', file), 'utf8'));
         }
-        await run(`
+        await run(String.raw`
             globalThis.jobs = [];
             globalThis.saved = [];
             globalThis.target = 'Org/Target';
@@ -58,14 +58,18 @@ async function main() {
             globalThis.mcdata = {
                 JOB_KIND: { IMPORT: 'import', IMPORT_CROSS_BU: 'importCrossBu' },
                 getSettings: async () => ({}),
-                setTelemetryConsent: async value => { saved.push(value); return { consent: value }; },
+                setTelemetryConsent: async value => { saved.push(value); return { consent: value, persistence: { saved: !globalThis.failSave } }; },
             };
             McForms.filePicker = () => ({ wrap: document.createElement('div'), getFiles: () => paths, getSizedFiles: () => [] });
             globalThis.McBuPicker = class {
                 element = document.createElement('div');
+                constructor(options) {
+                    if (options?.multiple) this.element.append(document.createElement('textarea'));
+                }
                 onChange() {}
                 refresh() {}
                 getValue() { return target; }
+                getValues() { return this.element.querySelector('textarea').value.split(/[,\n]+/).filter(Boolean); }
             };
             globalThis.McDeSelector = class {
                 element = document.createElement('div');
@@ -73,6 +77,7 @@ async function main() {
                 getKeys() { return keys; }
             };
             globalThis.JobRunner = class {
+                static subscribeActive(listener) { listener(); }
                 element = document.createElement('div');
                 async start(job) { jobs.push(job); }
             };
@@ -98,6 +103,7 @@ async function main() {
                     start.focus(); start.click(); start.click();
                 `);
                 assert.equal(await run('document.querySelectorAll("dialog[open]").length'), 1);
+                assert.equal(await run('start.disabled'), true);
                 assert.equal(await run('document.activeElement.id'), 'clear-answer');
                 const summary = await run('document.querySelector("#clear-targets").textContent');
                 assert.match(
@@ -168,6 +174,7 @@ async function main() {
                 }
                 await run('new Promise(resolve => requestAnimationFrame(resolve))');
                 assert.equal(await run('document.querySelectorAll("dialog").length'), 0);
+                assert.equal(await run('start.disabled'), false);
                 if (dismissal !== 'authorize') {
                     assert.equal(await run('document.activeElement === start'), true);
                 }
@@ -183,6 +190,38 @@ async function main() {
                 'consent-title',
             );
             assert.equal(await run('document.activeElement.textContent'), 'No thanks');
+            assert.equal(await run('document.querySelectorAll("dialog input:checked").length'), 0);
+            const explanation = await run(
+                'document.querySelector("dialog .telemetry-explainer").textContent',
+            );
+            for (const phrase of [
+                'pseudonymous random installation ID that links events from this installation',
+                'not guaranteed anonymous',
+                "PostHog's EU ingestion endpoint also receives network metadata, including your IP address",
+                'No analytics events are sent until affirmative consent is saved',
+                'Turn off all telemetry here at any time',
+                'Events already delivered cannot be recalled',
+                'First consenting run, app updates and launches (not a count of all installs)',
+                'App and loader versions, operating system/version, architecture, and installation channel',
+                'Export/import usage, job outcomes (including connection setup), and configuration-load/discovery outcomes',
+                'project-presence booleans',
+                'coarse file/DE/BU-count, size, row-count, and duration buckets',
+                'Closed error categories, names, and codes',
+                'without its region subtag',
+                'Never included in analytics payloads:',
+                'File names, folder/project paths, file contents, or row values',
+                'Business Unit names/MIDs, tenant identities, credential labels, or DE keys/field names',
+                'Credentials, auth URLs, tokens, raw error messages/stacks, or user-supplied names/email addresses',
+            ]) {
+                assert.ok(explanation.includes(phrase), `Missing consent explanation: ${phrase}`);
+            }
+            assert.doesNotMatch(
+                explanation,
+                /Always collected|not your identity|Anything identifying you or your organisation|never region or anything more/,
+            );
+            await run(
+                'globalThis.consentExplanation = document.querySelector("dialog .telemetry-explainer").textContent',
+            );
             await run('document.querySelector("#outside").focus()');
             assert.equal(await run('document.activeElement.textContent'), 'No thanks');
             await key('Tab');
@@ -215,6 +254,57 @@ async function main() {
             assert.equal(await run('document.activeElement.id'), 'outside');
         }
         assert.deepEqual(await run('saved'), [false, true]);
+        for (const value of [false, true]) {
+            await run(`
+                globalThis.failSave = true;
+                globalThis.consentDone = false;
+                void McSettings.initConsentGate().then(() => { consentDone = true; });
+            `);
+            await run(`document.querySelectorAll('dialog button')[${Number(value)}].click()`);
+            assert.equal(await run('consentDone'), false);
+            assert.equal(await run('document.querySelectorAll("dialog[open]").length'), 1);
+            assert.match(
+                await run('document.querySelector("dialog [role=status]").textContent'),
+                /disabled this session; choice not saved/,
+            );
+            await run('globalThis.failSave = false');
+            await run(`document.querySelectorAll('dialog button')[${Number(value)}].click()`);
+            await run('new Promise(resolve => requestAnimationFrame(resolve))');
+            assert.equal(await run('consentDone'), true);
+        }
+        await run(`
+            document.querySelector('main').replaceChildren();
+            mcdata.getSettings = async () => ({ consent: true, persistence: { saved: true } });
+            McScreens.settings.mount(document.querySelector('main'));
+            void McScreens.settings.activate();
+        `);
+        assert.equal(
+            await run('document.querySelector("main .telemetry-explainer").textContent'),
+            await run('consentExplanation'),
+        );
+        assert.equal(
+            await run(
+                'document.querySelector("main .card:last-child input[type=checkbox]").checked',
+            ),
+            true,
+        );
+        await run(`
+            globalThis.failSave = false;
+            const toggle = document.querySelector('main .card:last-child input[type=checkbox]');
+            toggle.checked = false;
+            toggle.dispatchEvent(new Event('change'));
+        `);
+        assert.equal(await run('saved.at(-1)'), false);
+        assert.equal(
+            await run(
+                'document.querySelector("main .card:last-child input[type=checkbox]").checked',
+            ),
+            false,
+        );
+        assert.match(
+            await run('document.querySelector("main .card:last-child [role=status]").textContent'),
+            /saved for next launch/,
+        );
         console.log(
             'DIALOGS_ELECTRON_OK: 4 modes; invalid/cancel/Escape/Enter; frozen targets; native focus/inertness; consent',
         );

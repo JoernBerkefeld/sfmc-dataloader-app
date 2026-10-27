@@ -49,6 +49,24 @@
     const MAX_LINE_BYTES = 8 * 1024;
 
     class JobRunner {
+        static #activeRunner;
+        static #listeners = new Set();
+        /**
+         * Subscribes to the single active runner without owning its lifecycle.
+         *
+         * @param {(job: object|undefined) => void} listener
+         * @returns {() => void}
+         */
+        static subscribeActive(listener) {
+            JobRunner.#listeners.add(listener);
+            const runner = JobRunner.#activeRunner;
+            listener(runner ? runner.#snapshot() : undefined);
+            return () => JobRunner.#listeners.delete(listener);
+        }
+
+        #view;
+        #label;
+
         /**
          * @type {string | undefined}
          */
@@ -76,6 +94,7 @@
          * @type {HTMLElement}
          */
         #fill;
+        #bar;
         /**
          * @type {HTMLElement}
          */
@@ -89,8 +108,44 @@
          */
         #cancelButton;
 
-        constructor() {
+        /**
+         * @param {{ view?: string, label?: string }} [options]
+         */
+        constructor({ view = 'export', label = 'Export' } = {}) {
+            this.#view = view;
+            this.#label = label;
             this.#root = this.#build();
+        }
+
+        /**
+         * @returns {object} Current active-job navigation summary.
+         */
+        #snapshot() {
+            return { view: this.#view, label: this.#label, status: this.#status.textContent };
+        }
+
+        /**
+         * @returns {void} Publishes only the owning runner's state.
+         */
+        #publish() {
+            if (JobRunner.#activeRunner === this) {
+                for (const listener of JobRunner.#listeners) {
+                    listener(this.#snapshot());
+                }
+            }
+        }
+
+        /**
+         * @returns {void} Releases the renderer-wide slot after a terminal event.
+         */
+        #release() {
+            if (JobRunner.#activeRunner !== this) {
+                return;
+            }
+            JobRunner.#activeRunner = undefined;
+            for (const listener of JobRunner.#listeners) {
+                listener();
+            }
         }
 
         /**
@@ -99,15 +154,35 @@
          * @returns {HTMLElement}
          */
         #build() {
-            const root = element('div', { class: 'job-runner' });
+            const root = element('div', {
+                class: 'job-runner',
+                attrs: { tabindex: '-1', role: 'region', 'aria-label': `${this.#label} job` },
+            });
 
-            const bar = element('div', { class: 'progress' });
+            const bar = element('div', {
+                class: 'progress',
+                attrs: {
+                    role: 'progressbar',
+                    'aria-label': `${this.#label} job progress`,
+                    'aria-valuemin': '0',
+                    'aria-valuemax': '100',
+                    'aria-valuenow': '0',
+                },
+            });
+            this.#bar = bar;
             this.#fill = element('div', { class: 'progress-fill' });
             bar.append(this.#fill);
 
-            this.#status = element('p', { class: 'job-status muted', text: 'Idle.' });
+            this.#status = element('p', {
+                class: 'job-status muted',
+                text: 'Idle.',
+                attrs: { role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' },
+            });
 
-            this.#log = element('pre', { class: 'job-log', attrs: { 'aria-live': 'polite' } });
+            this.#log = element('pre', {
+                class: 'job-log',
+                attrs: { tabindex: '0', role: 'region', 'aria-label': `${this.#label} job output` },
+            });
 
             this.#cancelButton = /** @type {HTMLButtonElement} */ (
                 element('button', {
@@ -138,13 +213,16 @@
          */
         #setProgress(ratio) {
             if (ratio < 0) {
+                this.#bar.removeAttribute('aria-valuenow');
                 this.#fill.classList.add('indeterminate');
                 this.#fill.style.width = '40%';
                 return;
             }
             this.#fill.classList.remove('indeterminate');
             const clamped = Math.max(0, Math.min(1, ratio));
-            this.#fill.style.width = Math.round(clamped * 100) + '%';
+            const percent = Math.round(clamped * 100);
+            this.#bar.setAttribute('aria-valuenow', String(percent));
+            this.#fill.style.width = percent + '%';
         }
 
         /**
@@ -324,8 +402,10 @@
                     if (text) {
                         this.#status.textContent = text;
                     }
+                    this.#publish();
                     if (typeof payload.event.ratio === 'number') {
-                        this.#setProgress(payload.event.ratio);
+                        // Batch progress is not proof of successful job completion.
+                        this.#setProgress(Math.min(0.99, payload.event.ratio));
                     } else if (['download', 'upload'].includes(payload.event.phase)) {
                         this.#setProgress(-1);
                     }
@@ -334,7 +414,7 @@
                     if (payload.jobId !== this.#jobId) {
                         return;
                     }
-                    this.#setProgress(1);
+                    this.#setProgress(!payload.cancelled && payload.exitCode === 0 ? 1 : 0);
                     if (payload.cancelled) {
                         this.#status.textContent =
                             'Cancelled locally. Already accepted imports may still finish remotely; cancellation is not rollback.';
@@ -403,16 +483,18 @@
          * @returns {Promise.<{ ok: boolean, exitCode?: number|null, cancelled?: boolean, error?: string }>}
          */
         async start(job) {
-            if (this.isRunning) {
+            if (this.isRunning || JobRunner.#activeRunner) {
                 return { ok: false, error: 'A job is already running.' };
             }
 
+            JobRunner.#activeRunner = this;
             this.#starting = true;
             this.#pendingEvents = [];
             this.#clearLogs();
             this.#setProgress(-1);
             this.#status.textContent = 'Starting…';
             this.#status.classList.remove('error');
+            this.#publish();
 
             const outcome = new Promise((resolve) => {
                 this.#subscribe((result) => {
@@ -420,6 +502,7 @@
                     this.#teardown();
                     this.#jobId = undefined;
                     this.#cancelButton.setAttribute('disabled', 'true');
+                    this.#release();
                     resolve(result);
                 });
             });
@@ -429,6 +512,7 @@
                 this.#jobId = result.jobId;
                 this.#starting = false;
                 this.#status.textContent = 'Running…';
+                this.#publish();
                 this.#cancelButton.removeAttribute('disabled');
                 const events = this.#pendingEvents;
                 this.#pendingEvents = [];
@@ -448,6 +532,7 @@
                 this.#status.classList.add('error');
                 this.#cancelButton.setAttribute('disabled', 'true');
                 toast(this.#status.textContent, 'error');
+                this.#release();
                 return { ok: false, error };
             }
 
@@ -467,6 +552,7 @@
             this.#cancelButton.setAttribute('disabled', 'true');
             this.#status.textContent =
                 'Cancelling locally… Waiting for worker exit. Accepted imports may still finish remotely; cancellation is not rollback.';
+            this.#publish();
             try {
                 const accepted = await globalObject.mcdata.cancelJob(jobId);
                 if (this.#jobId !== jobId) {
@@ -483,6 +569,7 @@
                     'Could not stop worker: ' + (ex?.message ?? String(ex)) + '. Retry Cancel.';
             }
             this.#cancelButton.removeAttribute('disabled');
+            this.#publish();
         }
     }
 

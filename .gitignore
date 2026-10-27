@@ -6,8 +6,7 @@ release
 coverage
 .DS_Store
 
-# Build-injected GA4 Measurement Protocol credentials (written by
-# scripts/write-analytics-config.mjs). Never committed; absent in dev.
+# Obsolete generated credentials: never read or shipped; keep local leftovers ignored.
 src/main/analytics-config.generated.json
 
 # stray local dev logs from `electron .` runs

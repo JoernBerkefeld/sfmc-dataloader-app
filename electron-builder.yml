@@ -12,6 +12,10 @@ files:
     - src/**/*
     - package.json
     - '!**/*.map'
+    # Never ship obsolete locally generated GA credentials.
+    - '!src/main/analytics-config.generated.json'
+    # SDK release preparation is not part of its runtime API.
+    - '!node_modules/sfmc-sdk/scripts/prepare-release.mjs'
 
 # asar keeps startup fast; native/unpacked modules are added here if ever needed.
 asar: true
@@ -46,6 +50,10 @@ mac:
     identity: null
     target:
         - target: dmg
+          arch:
+              - x64
+              - arm64
+        - target: zip
           arch:
               - x64
               - arm64

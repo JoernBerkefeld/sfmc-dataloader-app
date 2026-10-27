@@ -35,9 +35,15 @@
         #request = 0;
         #projectRoot;
         #listeners = new Set();
+        #multiple;
+        #search;
+        #checkList;
+        #options = [];
+        #selected = new Set();
+        #manualArea;
 
         /**
-         * @param {{ label?: string, hint?: string }} [options]
+         * @param {{ label?: string, hint?: string, multiple?: boolean }} [options]
          */
         constructor(options) {
             const label = options?.label ?? 'Business Unit';
@@ -55,10 +61,68 @@
             this.#manualInput.addEventListener('input', () => this.#notify());
 
             this.#root = element('div', { class: 'bu-picker' });
-            this.#root.append(field(label, this.#select, hint), this.#manualWrap);
+            this.#multiple = options?.multiple === true;
+            if (this.#multiple) {
+                this.#search = input({ type: 'search', placeholder: 'Search credentials or BUs' });
+                this.#search.addEventListener('input', () => this.#renderChoices());
+                this.#checkList = element('div', { class: 'bu-checklist' });
+                this.#manualArea = /** @type {HTMLTextAreaElement} */ (element('textarea'));
+                this.#manualArea.rows = 3;
+                this.#manualArea.placeholder = 'MyOrg/BU-A\nOtherOrg/BU-B';
+                this.#manualArea.addEventListener('input', () => this.#notify());
+                this.#root.append(
+                    element('p', { class: 'field-label', text: label }),
+                    field('Search saved Business Units', this.#search, hint),
+                    this.#checkList,
+                    field(
+                        'Additional Business Units (manual)',
+                        this.#manualArea,
+                        'credential/BU tokens, comma or newline separated; added after checked BUs',
+                    ),
+                );
+            } else {
+                this.#root.append(field(label, this.#select, hint), this.#manualWrap);
+            }
 
             this.#unsubscribe = globalObject.McState.subscribe(() => void this.refresh());
             void this.refresh();
+        }
+
+        /**
+         * Renders filtered choices without losing hidden selections or selection order.
+         *
+         * @returns {void}
+         */
+        #renderChoices() {
+            const query = this.#search.value.trim().toLowerCase();
+            this.#checkList.replaceChildren();
+            for (const option of this.#options) {
+                if (!`${option.label} ${option.value}`.toLowerCase().includes(query)) {
+                    continue;
+                }
+                const box = input({ type: 'checkbox' });
+                box.value = option.value;
+                box.checked = this.#selected.has(option.value);
+                box.addEventListener('change', () => {
+                    if (box.checked) {
+                        this.#selected.add(option.value);
+                    } else {
+                        this.#selected.delete(option.value);
+                    }
+                    this.#notify();
+                });
+                const row = element('label', { class: 'checkbox' });
+                row.append(box, element('span', { text: `${option.label} (${option.value})` }));
+                this.#checkList.append(row);
+            }
+            if (this.#checkList.children.length === 0) {
+                this.#checkList.append(
+                    element('p', {
+                        class: 'muted',
+                        text: 'No matching saved Business Units. Manual entry is available below.',
+                    }),
+                );
+            }
         }
 
         /**
@@ -94,14 +158,35 @@
             if (isChangedProject) {
                 this.#select.replaceChildren();
                 this.#manualInput.value = '';
+                if (this.#multiple) {
+                    this.#selected.clear();
+                    this.#options = [];
+                    this.#search.value = '';
+                    this.#manualArea.value = '';
+                    this.#renderChoices();
+                }
                 this.#notify();
             }
-            const before = this.getValue();
+            const before = JSON.stringify(this.getValues());
             const options = await globalObject.McConnectionData.listCredBuOptions(projectRoot);
             if (
                 request !== this.#request ||
                 projectRoot !== globalObject.McState.get().projectRoot
             ) {
+                return;
+            }
+
+            if (this.#multiple) {
+                const current = JSON.stringify(this.getValues());
+                this.#options = options;
+                const available = new Set(options.map((option) => option.value));
+                this.#selected = new Set(
+                    [...this.#selected].filter((value) => available.has(value)),
+                );
+                this.#renderChoices();
+                if (current !== JSON.stringify(this.getValues())) {
+                    this.#notify();
+                }
                 return;
             }
 
@@ -134,7 +219,7 @@
                 this.#select.value = previous;
             }
             this.#applyMode();
-            if (before !== this.getValue()) {
+            if (before !== JSON.stringify(this.getValues())) {
                 this.#notify();
             }
         }
@@ -162,10 +247,35 @@
          * @returns {string}
          */
         getValue() {
+            if (this.#multiple) {
+                return this.getValues()[0] ?? '';
+            }
             if (this.#select.value === MANUAL) {
                 return this.#manualInput.value.trim();
             }
             return this.#select.value;
+        }
+
+        /**
+         * Returns ordered, deduplicated tokens; manual entries follow checked BUs.
+         *
+         * @returns {string[]}
+         */
+        getValues() {
+            if (!this.#multiple) {
+                const value = this.getValue();
+                return value ? [value] : [];
+            }
+            // Submission must not reuse selections from a different project, even
+            // if a state subscriber has not run yet.
+            if (this.#projectRoot !== globalObject.McState.get().projectRoot) {
+                return [];
+            }
+            const manual = this.#manualArea.value
+                .split(/[\n,]+/)
+                .map((value) => value.trim())
+                .filter(Boolean);
+            return [...new Set([...this.#selected, ...manual])];
         }
 
         /**

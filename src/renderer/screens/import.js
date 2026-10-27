@@ -10,17 +10,6 @@
     const { JOB_KIND } = globalObject.mcdata;
 
     /**
-     * @param {string} raw
-     * @returns {string[]}
-     */
-    function parseList(raw) {
-        return raw
-            .split(/[\n,]+/)
-            .map((token) => token.trim())
-            .filter((token) => token.length > 0);
-    }
-
-    /**
      * Confirms only the frozen job displayed in a native, keyboard-modal dialog.
      *
      * @param {object} job
@@ -133,14 +122,12 @@
             hint: 'single-BU target (credential/BU)',
         });
 
-        const targetsArea = /** @type {HTMLTextAreaElement} */ (element('textarea'));
-        targetsArea.rows = 3;
-        targetsArea.placeholder = 'MyOrg/BU-A\nMyOrg/BU-B';
-        const targetsField = field(
-            'Targets (one per line)',
-            targetsArea,
-            'cross-BU: --to per line (credential/BU)',
-        );
+        const targetsPicker = new globalObject.McBuPicker({
+            label: 'Target Business Units',
+            multiple: true,
+            hint: 'Select across saved credentials or enter tokens manually.',
+        });
+        const targetsField = targetsPicker.element;
 
         const fromPicker = new globalObject.McBuPicker({
             label: 'Source Business Unit',
@@ -155,11 +142,6 @@
 
         targetPicker.onChange(() => deSelector.invalidate());
         fromPicker.onChange(() => deSelector.invalidate());
-        globalObject.McScreens.import.activate = () => {
-            void targetPicker.refresh();
-            void fromPicker.refresh();
-        };
-
         const files = filePicker({ extensions: ['csv', 'tsv', 'json'] });
         const filesField = field('Files to import', files.wrap);
 
@@ -175,12 +157,52 @@
         const backup = checkbox('Backup Data Extension before import', true);
         const clear = checkbox('Clear all rows before import (destructive)', false);
         const skipEmptyLines = checkbox('Skip empty lines (CSV/TSV)', false);
+        const debug = checkbox('Debug logs (may contain sensitive API data)', false);
+        let defaultsRevision = 0;
+        for (const control of [writeMode, backup.input, skipEmptyLines.input, debug.input]) {
+            control.addEventListener('change', () => defaultsRevision++);
+        }
+        globalObject.McScreens.import.activate = async () => {
+            void targetPicker.refresh();
+            void targetsPicker.refresh();
+            void fromPicker.refresh();
+            const revision = defaultsRevision;
+            try {
+                const settings = await globalObject.mcdata.getSettings();
+                if (
+                    revision === defaultsRevision &&
+                    !isSubmitting &&
+                    !runner.isRunning &&
+                    settings?.transferDefaults
+                ) {
+                    const defaults = settings.transferDefaults;
+                    writeMode.value = defaults.mode;
+                    backup.input.checked = defaults.backupBeforeImport;
+                    skipEmptyLines.input.checked = defaults.skipEmptyLines;
+                    debug.input.checked = defaults.debug;
+                }
+            } catch {
+                toast(
+                    'Could not load transfer defaults; current run options are unchanged.',
+                    'warn',
+                );
+            }
+        };
 
+        let isSubmitting = false;
+        let hasActiveJob = false;
         const runButton = button('Start import');
+        const updateRunButton = () => {
+            runButton.disabled = isSubmitting || hasActiveJob;
+        };
+        globalObject.JobRunner.subscribeActive((active) => {
+            hasActiveJob = Boolean(active);
+            updateRunButton();
+        });
         const controls = element('div', { class: 'form-actions' });
         controls.append(runButton);
 
-        const runner = new globalObject.JobRunner();
+        const runner = new globalObject.JobRunner({ view: 'import', label: 'Import' });
 
         /**
          * For file-based imports, warns before starting when any selected file is
@@ -224,12 +246,14 @@
             applyMode();
         });
 
-        let isSubmitting = false;
         runButton.addEventListener('click', async () => {
-            if (isSubmitting || runner.isRunning) {
+            if (isSubmitting || hasActiveJob || runner.isRunning) {
                 return;
             }
+            defaultsRevision++;
             isSubmitting = true;
+            updateRunButton();
+            let shouldRestoreFocus = false;
             try {
                 let job;
                 try {
@@ -245,6 +269,7 @@
                     return;
                 }
                 if (job.clearBeforeImport && !(await confirmClear(job))) {
+                    shouldRestoreFocus = true;
                     toast('Clear-before-import cancelled — confirmation did not match.', 'warn');
                     return;
                 }
@@ -252,11 +277,13 @@
                     toast('Import cancelled.', 'warn');
                     return;
                 }
-                runButton.setAttribute('disabled', 'true');
                 await runner.start(job);
             } finally {
                 isSubmitting = false;
-                runButton.removeAttribute('disabled');
+                updateRunButton();
+                if (shouldRestoreFocus && !runButton.disabled) {
+                    runButton.focus();
+                }
             }
         });
 
@@ -271,6 +298,7 @@
              */
             const job = {
                 mode: writeMode.value,
+                debug: debug.input.checked,
                 backupBeforeImport: backup.input.checked,
                 clearBeforeImport: clear.input.checked,
                 skipEmptyLines: mode !== 'crossApi' && skipEmptyLines.input.checked,
@@ -300,7 +328,7 @@
             }
 
             // cross-BU
-            const targets = parseList(targetsArea.value);
+            const targets = targetsPicker.getValues();
             if (targets.length === 0) {
                 throw new Error('Enter at least one target BU.');
             }
@@ -323,7 +351,7 @@
         }
 
         const optionsRow = element('div', { class: 'form-row' });
-        optionsRow.append(backup.wrap, clear.wrap, skipEmptyLines.wrap);
+        optionsRow.append(backup.wrap, clear.wrap, skipEmptyLines.wrap, debug.wrap);
 
         root.append(
             modeField,
