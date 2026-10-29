@@ -8,7 +8,7 @@ const { CHANNELS } = require('../shared/channels');
 const { JobManager } = require('./job-manager');
 const { UpdaterService } = require('./updater');
 const { SettingsStore } = require('./settings-store');
-const { selectChangelog, readBundledChangelog } = require('./changelog');
+const { selectChangelog, readBundledChangelog, isSafeReleaseUrl } = require('./changelog');
 const { Analytics } = require('./analytics');
 const configService = require('./config-service');
 
@@ -191,6 +191,13 @@ function createWindow() {
     state.mainWindow = win;
 
     win.removeMenu();
+    win.webContents.setWindowOpenHandler(({ url }) => {
+        if (isSafeReleaseUrl(url)) {
+            void shell.openExternal(url).catch(() => {});
+        }
+        return { action: 'deny' };
+    });
+    win.webContents.on('will-navigate', (event) => event.preventDefault());
     win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
     win.once('ready-to-show', () => {

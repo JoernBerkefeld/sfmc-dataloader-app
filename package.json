@@ -58,6 +58,7 @@
     },
     "dependencies": {
         "electron-updater": "^6.8.9",
+        "markdown-it": "^14.3.3",
         "sfmc-dataloader": "^4.0.0"
     },
     "lint-staged": {

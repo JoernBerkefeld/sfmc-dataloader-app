@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.1] — 2026-10-29
+
+### Fixed
+
+- Improve foreground contrast in dialogs and make normal and visited release-note links readable and underlined.
+- Keep the update dialog title simply **What's new**. The expandable **Release history** omits every release already shown in the update summary, including skipped updates.
+- Render bundled release notes with Markdown headings, lists, emphasis and code. Raw HTML is escaped and images are disabled; only credential-free HTTPS links open in the system browser, with navigation inside the app blocked. Release notes remain available offline from the bundled changelog, without runtime fetching.
+
+The bundled transfer engine is unchanged from app 0.8.0: `sfmc-dataloader` 4.0.0 and parser 5.0.0, running in-process with no external CLI dependency.
+
 ## [0.8.0] — 2026-10-29
 
 Adopts [sfmc-dataloader 4.0.0](https://github.com/JoernBerkefeld/sfmc-dataloader/releases/tag/v4.0.0) with [parser 5.0.0](https://github.com/JoernBerkefeld/csv-parser/releases/tag/v5.0.0), replacing loader 3.2.0/parser 4.3.0 shipped in app 0.7.0. There are no intermediate released versions in either dependency interval. The loader runs in-process in the app's worker, not through an external CLI override. Installed apps still need no separate Node.js installation; the development Node.js requirement is unchanged.

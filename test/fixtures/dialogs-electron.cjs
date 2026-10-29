@@ -1,7 +1,7 @@
 'use strict';
 
 /* global require, __dirname */
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, nativeTheme } = require('electron');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -17,10 +17,48 @@ async function main() {
         });
         await window.loadURL('data:text/html,<button id="outside">Outside</button><main></main>');
         window.focus();
-        await window.webContents.insertCSS(
-            fs.readFileSync(path.join(__dirname, '../../src/renderer/styles.css'), 'utf8'),
+        const styles = fs.readFileSync(
+            path.join(__dirname, '../../src/renderer/styles.css'),
+            'utf8',
+        );
+        await window.webContents.insertCSS(styles);
+        // Chromium conceals visited styles from computed-style reads; verify the shared rule too.
+        assert.match(
+            styles,
+            /\.changelog-text a,\s*\.changelog-text a:visited\s*\{\s*color: var\(--fg\);\s*text-decoration: underline;/,
         );
         const run = (code) => window.webContents.executeJavaScript(code, true);
+        const assertModalColors = async (selectors) => {
+            for (const theme of ['light', 'dark']) {
+                nativeTheme.themeSource = theme;
+                const colors = await run(`(() => {
+                    const modal = document.querySelector('dialog[open]');
+                    return {
+                        background: getComputedStyle(modal).backgroundColor,
+                        foregrounds: ${JSON.stringify(selectors)}.map(selector => getComputedStyle(modal.querySelector(selector)).color),
+                        muted: modal.querySelector('.telemetry-list') ? getComputedStyle(modal.querySelector('.telemetry-list')).color : null,
+                        linkDecoration: modal.querySelector('.changelog-text a') ? getComputedStyle(modal.querySelector('.changelog-text a')).textDecorationLine : null,
+                    };
+                })()`);
+                assert.equal(colors.background, 'rgb(37, 37, 38)', `${theme} modal background`);
+                assert.deepEqual(
+                    colors.foregrounds,
+                    selectors.map(() => 'rgb(224, 224, 224)'),
+                    `${theme} modal text`,
+                );
+                if (colors.linkDecoration) {
+                    assert.equal(
+                        colors.linkDecoration,
+                        'underline',
+                        `${theme} release link underline`,
+                    );
+                }
+                if (colors.muted) {
+                    assert.equal(colors.muted, 'rgb(157, 157, 157)', `${theme} muted list`);
+                }
+            }
+            nativeTheme.themeSource = 'system';
+        };
         // Windows hooks can occlude this window; prove frames still run minimized.
         // Xvfb runners need not provide a window manager supporting minimization.
         if (process.platform === 'win32') {
@@ -103,6 +141,7 @@ async function main() {
                     start.focus(); start.click(); start.click();
                 `);
                 assert.equal(await run('document.querySelectorAll("dialog[open]").length'), 1);
+                await assertModalColors(['h2', '#clear-targets']);
                 assert.equal(await run('start.disabled'), true);
                 assert.equal(await run('document.activeElement.id'), 'clear-answer');
                 const summary = await run('document.querySelector("#clear-targets").textContent');
@@ -189,6 +228,7 @@ async function main() {
                 await run('document.querySelector("dialog").getAttribute("aria-labelledby")'),
                 'consent-title',
             );
+            await assertModalColors(['h2', '.telemetry-explainer p', '.telemetry-subhead']);
             assert.equal(await run('document.activeElement.textContent'), 'No thanks');
             assert.equal(await run('document.querySelectorAll("dialog input:checked").length'), 0);
             const explanation = await run(
@@ -306,11 +346,18 @@ async function main() {
             /saved for next launch/,
         );
         await run(fs.readFileSync(path.join(__dirname, '../../src/renderer/changelog.js'), 'utf8'));
+        const { selectChangelog } = require('../../src/main/changelog');
+        const releaseNotes = selectChangelog(
+            '# Changelog\n\n## [2.0.0]\n\n### Changed\n\n**Bold** [release](https://github.com/example/release)\n\n<script>unsafe</script>\n\n## [1.1.0]\n\nSkipped update\n\n## [1.0.0]\n\n**History**\n',
+            '2.0.0',
+            '1.0.0',
+        );
+        await run(`globalThis.releaseNotes = ${JSON.stringify(releaseNotes)}`);
         await run(`
             globalThis.acknowledgements = 0;
             globalThis.active = { label: 'Synthetic job' };
             JobRunner.subscribeActive = listener => { globalThis.jobListener = listener; listener(active); return () => {}; };
-            mcdata.getChangelog = async () => ({ pending: true, currentVersion: '2.0.0', sections: [{version:'2.0.0', text:'<script>unsafe</script>'}], history: [{version:'1.0.0',text:'History'}] });
+            mcdata.getChangelog = async () => releaseNotes;
             mcdata.acknowledgeChangelog = async () => { acknowledgements++; return {saved:true}; };
             document.querySelector('#outside').focus();
             void McChangelog.init();
@@ -324,6 +371,37 @@ async function main() {
         await run(`blocker.close(); blocker.remove(); document.querySelector('#outside').focus();`);
         await run('new Promise(resolve => requestAnimationFrame(resolve))');
         assert.equal(await run('document.querySelectorAll(".changelog-modal[open]").length'), 1);
+        await assertModalColors(['h2', '.changelog-text', '.changelog-text a']);
+        assert.equal(
+            await run('document.querySelector(".changelog-modal details summary").textContent'),
+            'Release history',
+        );
+        assert.deepEqual(
+            await run(
+                'Array.from(document.querySelectorAll(".changelog-modal details h3"), heading => heading.textContent)',
+            ),
+            ['Version 1.0.0'],
+        );
+        assert.equal(
+            await run('document.querySelector("#changelog-title").textContent'),
+            "What's new",
+        );
+        assert.equal(
+            await run('document.querySelector(".changelog-text h3").textContent'),
+            'Changed',
+        );
+        assert.equal(
+            await run('document.querySelector(".changelog-text strong").textContent'),
+            'Bold',
+        );
+        assert.equal(
+            await run('document.querySelector(".changelog-text a").href'),
+            'https://github.com/example/release',
+        );
+        assert.equal(
+            await run('document.querySelector(".changelog-modal details strong").textContent'),
+            'History',
+        );
         assert.equal(await run('document.activeElement.textContent'), 'Close changelog');
         assert.equal(
             await run('Boolean(document.querySelector(".changelog-modal script"))'),

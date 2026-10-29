@@ -1,6 +1,6 @@
 'use strict';
 
-// Native dialog supplies modal semantics and focus containment; content is text-only.
+// Native dialog supplies modal semantics and focus containment.
 (function initChangelog(globalObject) {
     const { element, toast } = globalObject.McUI;
 
@@ -51,7 +51,7 @@
     }
 
     /**
-     * Displays release sections and optional full bundled history using textContent only.
+     * Displays release sections and older history using main-process-rendered Markdown.
      *
      * @param {object} notes
      * @returns {void}
@@ -63,7 +63,7 @@
             attrs: { 'aria-labelledby': 'changelog-title' },
         });
         const heading = element('h2', {
-            text: `What's new in v${notes.currentVersion}`,
+            text: "What's new",
             attrs: { id: 'changelog-title' },
         });
         const close = globalObject.McForms.button('Close changelog');
@@ -74,15 +74,15 @@
         const status = element('p', { attrs: { role: 'status' } });
         const appendSections = (target, sections) => {
             for (const section of sections) {
-                target.append(
-                    element('h3', { text: `Version ${section.version}` }),
-                    element('pre', { class: 'changelog-text', text: section.text }),
-                );
+                const body = element('div', { class: 'changelog-text' });
+                // Only parser-generated HTML from the main process crosses this boundary.
+                body.innerHTML = section.html;
+                target.append(element('h3', { text: `Version ${section.version}` }), body);
             }
         };
         appendSections(content, notes.sections);
         const history = element('details');
-        history.append(element('summary', { text: 'Bundled release history' }));
+        history.append(element('summary', { text: 'Release history' }));
         appendSections(history, notes.history);
         content.append(history);
         dialog.append(heading, content, status, close);

@@ -75,7 +75,14 @@ async function setup(configOverride) {
     };
     const win = {
         ...emitter(),
-        webContents: { isDestroyed: () => false, send() {} },
+        webContents: {
+            ...emitter(),
+            isDestroyed: () => false,
+            send() {},
+            setWindowOpenHandler(handler) {
+                win.webContents.openWindow = handler;
+            },
+        },
         removeMenu() {},
         loadFile() {},
     };
@@ -90,6 +97,11 @@ async function setup(configOverride) {
     const electron = {
         app,
         BrowserWindow,
+        shell: {
+            openExternal: async (url) => {
+                win.externalUrl = url;
+            },
+        },
         ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
         dialog: {
             showMessageBox: (...arguments_) => {
@@ -218,8 +230,33 @@ async function setup(configOverride) {
         });
         return isPrevented;
     };
-    return { app, prompts, workers, invoke, close, fakeUpdater, telemetry };
+    return { app, win, prompts, workers, invoke, close, fakeUpdater, telemetry };
 }
+
+test('release links open only safe HTTPS externally and never navigate the app', async () => {
+    const { win } = await setup();
+    for (const url of [
+        'javascript:alert(1)',
+        'file:///tmp/test', // eslint-disable-next-line unicorn/prefer-https -- Verify insecure external links are rejected.
+        'http://example.com',
+        '//example.com',
+        '/relative',
+        'https://user:pass@example.com',
+    ]) {
+        assert.equal(win.webContents.openWindow({ url }).action, 'deny');
+        assert.equal(win.externalUrl, undefined);
+    }
+    const url = 'https://github.com/example/release';
+    assert.equal(win.webContents.openWindow({ url }).action, 'deny');
+    assert.equal(win.externalUrl, url);
+    let isPrevented = false;
+    win.webContents.emit('will-navigate', {
+        preventDefault() {
+            isPrevented = true;
+        },
+    });
+    assert.equal(isPrevented, true);
+});
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 

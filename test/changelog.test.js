@@ -5,7 +5,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { selectChangelog, compareVersions, readBundledChangelog } = require('../src/main/changelog');
+const {
+    selectChangelog,
+    compareVersions,
+    readBundledChangelog,
+    isSafeReleaseUrl,
+} = require('../src/main/changelog');
 const { SettingsStore } = require('../src/main/settings-store');
 
 const markdown =
@@ -27,6 +32,70 @@ test('offline release selection covers upgrades, skipped versions, legacy, relau
     assert.equal(selectChangelog(markdown, '3.0.0', '1.0.0').pending, false);
     assert.equal(selectChangelog('', '2.0.0').pending, false);
     assert.match(selectChangelog(markdown, '2.0.0').sections[0].text, /<script>/);
+});
+
+test('older history excludes every release already displayed in the update summary', () => {
+    for (const baseline of [undefined, 'invalid', '1.1.0']) {
+        const notes = selectChangelog(markdown, '2.0.0', baseline);
+        assert.deepEqual(
+            notes.sections.map((section) => section.version),
+            ['2.0.0'],
+        );
+        assert.deepEqual(
+            notes.history.map((section) => section.version),
+            ['1.1.0', '1.0.0'],
+        );
+    }
+    const skipped = selectChangelog(markdown, '2.0.0', '1.0.0');
+    assert.deepEqual(
+        skipped.sections.map((section) => section.version),
+        ['2.0.0', '1.1.0'],
+    );
+    assert.deepEqual(skipped.history, [{ version: '1.0.0', text: 'Old', html: '<p>Old</p>\n' }]);
+    assert.deepEqual(selectChangelog(markdown, '2.0.0', '0.9.0').history, []);
+    const olderCurrent = selectChangelog(markdown, '1.1.0');
+    assert.deepEqual(
+        olderCurrent.sections.map((section) => section.version),
+        ['1.1.0'],
+    );
+    assert.deepEqual(
+        olderCurrent.history.map((section) => section.version),
+        ['1.0.0'],
+    );
+    assert.deepEqual(selectChangelog('', '2.0.0').history, []);
+});
+
+test('release Markdown renders formatting but never raw HTML, images or unsafe links', () => {
+    const source =
+        '# Changelog\n\n## [2.0.0]\n\n### Changed\n\n- **Bold** and `code` with [release](https://github.com/example/release).\n\n<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>\n\n![image](https://example.com/image.png)\n\n';
+    const urls = [
+        'javascript:alert(1)',
+        'data:text/html,test',
+        'file:///tmp/test', // eslint-disable-next-line unicorn/prefer-https -- Verify insecure release links are rejected.
+        'http://example.com',
+        '//example.com',
+        '/relative',
+        'https://user:password@example.com',
+    ];
+    const notes = selectChangelog(
+        source + urls.map((url) => `[unsafe](${url})`).join('\n\n'),
+        '2.0.0',
+    );
+    const { html } = notes.sections[0];
+    assert.match(html, /<h3>Changed<\/h3>/);
+    assert.match(html, /<ul>\s*<li><strong>Bold<\/strong> and <code>code<\/code>/);
+    assert.match(
+        html,
+        /href="https:\/\/github.com\/example\/release" target="_blank" rel="noopener noreferrer"/,
+    );
+    assert.match(html, /&lt;script&gt;/);
+    assert.doesNotMatch(html, /<script|<img|onerror="|href="(?:javascript|data|file|http:|\/)/i);
+    // Disabled image syntax may retain its safe HTTPS link, but never loads an image.
+    assert.equal((html.match(/<a /g) ?? []).length, 2);
+    for (const url of urls) {
+        assert.equal(isSafeReleaseUrl(url), false, url);
+    }
+    assert.equal(isSafeReleaseUrl('https://github.com/example/release'), true);
 });
 
 test('fresh installs baseline silently; legacy notes persist until explicit acknowledgement', async () => {

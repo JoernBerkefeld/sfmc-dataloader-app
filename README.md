@@ -172,12 +172,16 @@ or your package manager are updated the usual way (`apt`, `dnf`, `snap`,
 `flatpak update`, `winget upgrade`, `scoop update`, …).
 
 After an installed update launches, bundled offline release notes open in a
-keyboard-accessible dialog at 80% of the window width and height. Notes wait for
+keyboard-accessible **What's new** dialog at 80% of the window width and height.
+Headings, lists, emphasis, code and HTTPS links are rendered from the bundled
+Markdown; raw HTML and images are disabled. Links open in your system browser,
+never inside the app. No release notes are fetched from GitHub at runtime. Notes wait for
 consent dialogs and active jobs to finish. Close or Escape saves acknowledgement;
 failed saves are reported and may show the notes again next launch. Fresh installs
 silently establish a baseline. Legacy settings without a baseline show the current
 release once; skipped releases show the interval since acknowledgement. Downgrades
-do not lower that baseline. Expand **Bundled release history** for older notes.
+do not lower that baseline. Expand **Release history** for older notes, excluding
+all releases already displayed in the update summary.
 Release builds require a matching current-version section in `CHANGELOG.md`.
 
 ## Telemetry & privacy
