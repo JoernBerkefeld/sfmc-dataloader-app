@@ -98,7 +98,7 @@ unsplit output. Invalid input is labelled inline and prevents submission.
 
 **Settings → Transfer defaults** saves export format (CSV initially), stable
 filenames (off), import mode (upsert), backup before import (on), skip empty lines
-(off), and debug logging (off). Transfer screens allow per-run overrides. Clear
+(on), and debug logging (off). Transfer screens allow per-run overrides. Clear
 before import is never saved as a default. If saving fails, the app reports that
 defaults apply only to the current session and offers **Retry saving transfer
 defaults**; do not assume they will survive a restart. Debug logging can capture
@@ -111,11 +111,41 @@ through labelled live regions; the return button moves focus to the job, and job
 output is keyboard-focusable. Destructive dialogs support keyboard confirmation,
 Escape cancellation, and focus restoration.
 
-On the **Import** screen, **Skip empty lines (CSV/TSV)** is unchecked by default.
-Enable it to ignore unquoted blank or whitespace-only records in CSV/TSV files,
-including Data Extension export files and cross-BU file imports. It leaves values
-unchanged: quoted empty cells, delimiter-only rows, and blank lines inside quoted
-fields remain data. JSON imports, API copies, and exports are unaffected.
+On the **Import** screen, **Skip empty lines (CSV/TSV)** is selected by default.
+The old saved preference is reset to enabled once on upgrade; subsequent opt-outs
+survive restarts and future upgrades. An unchecked control explicitly passes
+`--no-skip-empty-lines`; checked controls pass `--skip-empty-lines`.
+
+Skipping now extends to delimiter-only and
+quoted-empty records as well as unquoted blank/whitespace-only records. Quoted
+whitespace and blank lines inside populated quoted fields remain data. Automatic
+file cleanup is independent: unnamed empty right-padding columns and final empty
+records across the selected file set are removed even when skipping is unchecked.
+Padding containing data is rejected before import, and source files are unchanged.
+JSON imports, API copies and exports are unaffected.
+
+**Browse** also accepts `Customer.List.csv` for
+literal DE key `Customer.List`, `Customers.part1.csv` for literal key
+`Customers.part1`, and uppercase `.CSV`. Plain TSV/JSON names are not added.
+Existing `.mcdata` filenames keep their legacy interpretation, including multipart
+and timestamp conventions. Keys colliding with that reserved convention must be
+changed. Selecting plain and legacy files for the same key is ambiguous and is
+rejected; automatic discovery and export naming are unchanged.
+
+App 0.8.0 adopts [loader 4.0.0](https://github.com/JoernBerkefeld/sfmc-dataloader/releases/tag/v4.0.0)
+and [parser 5.0.0](https://github.com/JoernBerkefeld/csv-parser/releases/tag/v5.0.0),
+replacing loader 3.2.0/parser 4.3.0 from app 0.7.0. There are no intermediate
+released versions in either interval. The app uses the bundled loader in-process,
+not a separately installed CLI.
+
+Cleanup does not repair malformed CSV: original physical widths and strict quote
+checks still apply, including delimiter-only/quoted-empty records at EOF. Named and
+interior unnamed columns remain. With skipping disabled, trailing unquoted blanks
+can be trimmed, but malformed interior blanks still fail. Inputs with no retained
+data fail before backup, clear or upload. Cleanup counts are reported once per
+logical source set, separating removed columns/trailing records from optional skips;
+counts, snapshots and uploads reuse the same validated policy. Keep selected files
+unchanged through import: preflight is not a file lock, transaction or rollback.
 
 > **Note on macOS:** until code-signing certificates are configured, macOS builds are **unsigned**. You may need to right-click the app and choose _Open_ the first time to get past Gatekeeper.
 
@@ -140,6 +170,15 @@ background, and shows a banner offering to **restart & install**. Installing dur
 an active job requires confirmation and waits for the local worker to exit. Installs via **deb/rpm/snap**, **Flatpak**,
 or your package manager are updated the usual way (`apt`, `dnf`, `snap`,
 `flatpak update`, `winget upgrade`, `scoop update`, …).
+
+After an installed update launches, bundled offline release notes open in a
+keyboard-accessible dialog at 80% of the window width and height. Notes wait for
+consent dialogs and active jobs to finish. Close or Escape saves acknowledgement;
+failed saves are reported and may show the notes again next launch. Fresh installs
+silently establish a baseline. Legacy settings without a baseline show the current
+release once; skipped releases show the interval since acknowledgement. Downgrades
+do not lower that baseline. Expand **Bundled release history** for older notes.
+Release builds require a matching current-version section in `CHANGELOG.md`.
 
 ## Telemetry & privacy
 
@@ -200,7 +239,7 @@ argv.
 ### Development
 
 Use Node.js `^22.22.2 || >=24.15.0` for development. The app bundles
-`sfmc-dataloader` `^3.2.0` (lockfile baseline 3.2.0); installed desktop apps need no separate Node.js install.
+`sfmc-dataloader` `^4.0.0` (lockfile version 4.0.0, parser 5.0.0); installed desktop apps need no separate Node.js install.
 The loader preserves unsuccessful/unverified import outcomes and rejects
 ambiguous explicit file selections rather than retrying or dropping files.
 

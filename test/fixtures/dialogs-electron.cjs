@@ -305,6 +305,59 @@ async function main() {
             await run('document.querySelector("main .card:last-child [role=status]").textContent'),
             /saved for next launch/,
         );
+        await run(fs.readFileSync(path.join(__dirname, '../../src/renderer/changelog.js'), 'utf8'));
+        await run(`
+            globalThis.acknowledgements = 0;
+            globalThis.active = { label: 'Synthetic job' };
+            JobRunner.subscribeActive = listener => { globalThis.jobListener = listener; listener(active); return () => {}; };
+            mcdata.getChangelog = async () => ({ pending: true, currentVersion: '2.0.0', sections: [{version:'2.0.0', text:'<script>unsafe</script>'}], history: [{version:'1.0.0',text:'History'}] });
+            mcdata.acknowledgeChangelog = async () => { acknowledgements++; return {saved:true}; };
+            document.querySelector('#outside').focus();
+            void McChangelog.init();
+        `);
+        assert.equal(await run('document.querySelectorAll("dialog[open]").length'), 0);
+        await run(`
+            globalThis.blocker = document.createElement('dialog'); document.body.append(blocker); blocker.showModal();
+            jobListener(undefined);
+        `);
+        assert.equal(await run('document.querySelectorAll(".changelog-modal").length'), 0);
+        await run(`blocker.close(); blocker.remove(); document.querySelector('#outside').focus();`);
+        await run('new Promise(resolve => requestAnimationFrame(resolve))');
+        assert.equal(await run('document.querySelectorAll(".changelog-modal[open]").length'), 1);
+        assert.equal(await run('document.activeElement.textContent'), 'Close changelog');
+        assert.equal(
+            await run('Boolean(document.querySelector(".changelog-modal script"))'),
+            false,
+        );
+        assert.match(
+            await run('document.querySelector(".changelog-text").textContent'),
+            /<script>/,
+        );
+        const dimensions = await run(
+            `({width:document.querySelector('.changelog-modal').getBoundingClientRect().width / innerWidth, height:document.querySelector('.changelog-modal').getBoundingClientRect().height / innerHeight})`,
+        );
+        assert.ok(Math.abs(dimensions.width - 0.8) < 0.01);
+        assert.ok(Math.abs(dimensions.height - 0.8) < 0.01);
+        for (let index = 0; index < 6; index++) {
+            await key('Tab');
+        }
+        assert.equal(
+            await run(
+                'document.querySelector(".changelog-modal").contains(document.activeElement)',
+            ),
+            true,
+        );
+        assert.equal(await run('acknowledgements'), 0);
+        await key('Escape');
+        await run('new Promise(resolve => requestAnimationFrame(resolve))');
+        assert.equal(await run('acknowledgements'), 1);
+        assert.equal(await run('document.activeElement.id'), 'outside');
+        await run(`globalThis.active = undefined; void McChangelog.init();`);
+        await run('new Promise(resolve => requestAnimationFrame(resolve))');
+        await run(`document.querySelector('.changelog-modal button').click()`);
+        await run('new Promise(resolve => requestAnimationFrame(resolve))');
+        assert.equal(await run('acknowledgements'), 2);
+        assert.equal(await run('document.querySelectorAll(".changelog-modal").length'), 0);
         console.log(
             'DIALOGS_ELECTRON_OK: 4 modes; invalid/cancel/Escape/Enter; frozen targets; native focus/inertness; consent',
         );

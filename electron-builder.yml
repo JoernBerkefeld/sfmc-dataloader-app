@@ -11,6 +11,7 @@ directories:
 files:
     - src/**/*
     - package.json
+    - CHANGELOG.md
     - '!**/*.map'
     # Never ship obsolete locally generated GA credentials.
     - '!src/main/analytics-config.generated.json'
@@ -19,6 +20,7 @@ files:
 
 # asar keeps startup fast; native/unpacked modules are added here if ever needed.
 asar: true
+beforePack: scripts/check-changelog.cjs
 
 npmRebuild: false
 

@@ -108,7 +108,7 @@ test('adopted package-root public API lists connections without reading auth', a
         `loader ${identity.version}; entry ${entry}; public API ${typeof dl.loadPublicProjectConfig}`,
     );
     if (!process.env.SFMC_DATALOADER_FIXTURE) {
-        assert.equal(require('../package.json').dependencies['sfmc-dataloader'], '^3.2.0');
+        assert.equal(require('../package.json').dependencies['sfmc-dataloader'], '^4.0.0');
     }
     assert.equal(typeof dl.loadPublicProjectConfig, 'function');
     const configOptions = process.env.SFMC_DATALOADER_FIXTURE

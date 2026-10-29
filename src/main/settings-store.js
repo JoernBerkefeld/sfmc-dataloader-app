@@ -28,6 +28,7 @@
 const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
 
+const { compareVersions } = require('./changelog');
 const CONSENT_VERSION = 1;
 
 const TRANSFER_DEFAULTS = Object.freeze({
@@ -35,7 +36,7 @@ const TRANSFER_DEFAULTS = Object.freeze({
     git: false,
     mode: 'upsert',
     backupBeforeImport: true,
-    skipEmptyLines: false,
+    skipEmptyLines: true,
     debug: false,
 });
 
@@ -53,7 +54,7 @@ function normalizeTransferDefaults(value) {
         mode: ['upsert', 'insert'].includes(input.mode) ? input.mode : 'upsert',
         backupBeforeImport:
             typeof input.backupBeforeImport === 'boolean' ? input.backupBeforeImport : true,
-        skipEmptyLines: typeof input.skipEmptyLines === 'boolean' ? input.skipEmptyLines : false,
+        skipEmptyLines: typeof input.skipEmptyLines === 'boolean' ? input.skipEmptyLines : true,
         debug: typeof input.debug === 'boolean' ? input.debug : false,
     };
 }
@@ -183,6 +184,8 @@ class SettingsStore {
             event = LIFECYCLE.UPDATE;
         }
 
+        const changelogBaseline =
+            Object.keys(stored).length === 0 ? this._currentVersion : undefined;
         this._state = {
             clientId,
             lastVersion: this._currentVersion,
@@ -192,7 +195,15 @@ class SettingsStore {
                 stored.telemetryConsentVersion === CONSENT_VERSION &&
                 stored.telemetryFirstConsentedRun === true,
             projectRoot,
-            transferDefaults: normalizeTransferDefaults(stored.transferDefaults),
+            transferDefaults: normalizeTransferDefaults({
+                ...stored.transferDefaults,
+                ...(stored.emptyRecordsMigrationVersion !== 1 && { skipEmptyLines: true }),
+            }),
+            emptyRecordsMigrationVersion: 1,
+            changelogAcknowledgedVersion:
+                typeof stored.changelogAcknowledgedVersion === 'string'
+                    ? stored.changelogAcknowledgedVersion
+                    : changelogBaseline,
         };
         this._loaded = true;
         // Only previously saved, versioned affirmative consent can enable startup telemetry.
@@ -200,6 +211,33 @@ class SettingsStore {
         await this.#write();
 
         return { event, clientId, previousVersion, persistence: { ...this._persistence } };
+    }
+
+    /**
+     * The changelog baseline is independent of lastVersion, which startup overwrites.
+     *
+     * @returns {string | undefined}
+     */
+    getChangelogAcknowledgement() {
+        return this._state.changelogAcknowledgedVersion;
+    }
+
+    /**
+     * Explicit dismissal acknowledges only the trusted running version, never a downgrade.
+     *
+     * @returns {Promise.<object>} persistence outcome
+     */
+    async acknowledgeChangelog() {
+        const previous = this._state.changelogAcknowledgedVersion;
+        if (compareVersions(this._currentVersion, previous) <= 0) {
+            return { saved: true };
+        }
+        this._state.changelogAcknowledgedVersion = this._currentVersion;
+        const result = await this.#write();
+        if (!result.saved) {
+            this._state.changelogAcknowledgedVersion = previous;
+        }
+        return result;
     }
 
     /**

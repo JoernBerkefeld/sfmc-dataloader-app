@@ -9,6 +9,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 // and tests); `test/preload-channels.test.js` guards the two against drift.
 const CHANNELS = {
     APP_INFO: 'app:info',
+    CHANGELOG_GET: 'changelog:get',
+    CHANGELOG_ACKNOWLEDGE: 'changelog:acknowledge',
     DIALOG_OPEN_DIRECTORY: 'dialog:openDirectory',
     DIALOG_OPEN_FILES: 'dialog:openFiles',
     OPEN_PATH: 'shell:openPath',
@@ -60,6 +62,8 @@ const api = {
      * @returns {Promise.<object>} basic app/runtime info
      */
     getAppInfo: () => ipcRenderer.invoke(CHANNELS.APP_INFO),
+    getChangelog: () => ipcRenderer.invoke(CHANNELS.CHANGELOG_GET),
+    acknowledgeChangelog: () => ipcRenderer.invoke(CHANNELS.CHANGELOG_ACKNOWLEDGE),
 
     /**
      * @returns {Promise.<string | null>} chosen directory path, or null if cancelled

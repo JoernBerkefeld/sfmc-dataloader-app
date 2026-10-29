@@ -156,7 +156,7 @@
 
         const backup = checkbox('Backup Data Extension before import', true);
         const clear = checkbox('Clear all rows before import (destructive)', false);
-        const skipEmptyLines = checkbox('Skip empty lines (CSV/TSV)', false);
+        const skipEmptyLines = checkbox('Skip empty lines (CSV/TSV)', true);
         const debug = checkbox('Debug logs (may contain sensitive API data)', false);
         let defaultsRevision = 0;
         for (const control of [writeMode, backup.input, skipEmptyLines.input, debug.input]) {
@@ -346,6 +346,12 @@
             return job;
         }
 
+        root.append(
+            element('p', {
+                class: 'muted',
+                text: 'Skip empty lines includes blank, delimiter-only and quoted-empty records. Automatic empty right/bottom file-edge cleanup remains enabled when unchecked.',
+            }),
+        );
         const optionsRow = element('div', { class: 'form-row' });
         optionsRow.append(backup.wrap, clear.wrap, skipEmptyLines.wrap, debug.wrap);
 

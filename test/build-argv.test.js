@@ -142,6 +142,7 @@ test('single-BU import by DE with upsert and backup flag', () => {
         '--mode',
         'upsert',
         '--backup-before-import',
+        '--skip-empty-lines',
     ]);
 });
 
@@ -160,6 +161,7 @@ test('single-BU import by file with explicit no-backup', () => {
         '--file',
         '/tmp/DE_A.mcdata.csv',
         '--no-backup-before-import',
+        '--skip-empty-lines',
     ]);
 });
 
@@ -210,6 +212,7 @@ test('cross-BU file import: repeated --to + --file, no --from', () => {
         'MyOrg/Dst1',
         '--file',
         '/tmp/DE_A.mcdata.csv',
+        '--skip-empty-lines',
     ]);
 });
 
@@ -279,13 +282,17 @@ test('rejects invalid format and non-positive maxRowsPerFile', () => {
     );
 });
 
-test('skipEmptyLines is opt-in for CSV/TSV imports and excluded elsewhere', () => {
+test('skipEmptyLines defaults on with explicit opt-out and is excluded elsewhere', () => {
     const single = { kind: JOB_KIND.IMPORT, source: 'Org/BU', deKeys: ['DE'] };
     const cross = { kind: JOB_KIND.IMPORT_CROSS_BU, to: ['Org/BU'] };
     for (const skipEmptyLines of [undefined, false, true, 'true']) {
         assert.equal(
             buildMcdataArgv({ ...single, skipEmptyLines }).includes('--skip-empty-lines'),
-            skipEmptyLines === true,
+            skipEmptyLines !== false,
+        );
+        assert.equal(
+            buildMcdataArgv({ ...single, skipEmptyLines }).includes('--no-skip-empty-lines'),
+            skipEmptyLines === false,
         );
     }
     for (const job of [

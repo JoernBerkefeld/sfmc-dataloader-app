@@ -8,6 +8,7 @@ const { CHANNELS } = require('../shared/channels');
 const { JobManager } = require('./job-manager');
 const { UpdaterService } = require('./updater');
 const { SettingsStore } = require('./settings-store');
+const { selectChangelog, readBundledChangelog } = require('./changelog');
 const { Analytics } = require('./analytics');
 const configService = require('./config-service');
 
@@ -306,6 +307,14 @@ function registerIpcHandlers() {
         return requestInterruption('Stop job', () => true);
     });
 
+    ipcMain.handle(CHANNELS.CHANGELOG_GET, async () =>
+        selectChangelog(
+            await readBundledChangelog(),
+            app.getVersion(),
+            state.settings?.getChangelogAcknowledgement(),
+        ),
+    );
+    ipcMain.handle(CHANNELS.CHANGELOG_ACKNOWLEDGE, () => state.settings?.acknowledgeChangelog());
     ipcMain.handle(CHANNELS.SETTINGS_GET, () => state.settings?.getState());
     ipcMain.handle(CHANNELS.SETTINGS_SET_TRANSFER_DEFAULTS, (_event, value) =>
         state.settings?.setTransferDefaults(value),

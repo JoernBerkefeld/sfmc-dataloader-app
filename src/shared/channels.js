@@ -8,6 +8,8 @@
 const CHANNELS = {
     // renderer -> main (invoke/handle, returns a promise)
     APP_INFO: 'app:info',
+    CHANGELOG_GET: 'changelog:get',
+    CHANGELOG_ACKNOWLEDGE: 'changelog:acknowledge',
     DIALOG_OPEN_DIRECTORY: 'dialog:openDirectory',
     DIALOG_OPEN_FILES: 'dialog:openFiles',
     OPEN_PATH: 'shell:openPath',

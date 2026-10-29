@@ -247,7 +247,7 @@ test('legacy settings migrate to unchanged safe transfer defaults', async () => 
         git: false,
         mode: 'upsert',
         backupBeforeImport: true,
-        skipEmptyLines: false,
+        skipEmptyLines: true,
         debug: false,
     });
     assert.equal(store.getConsent(), false);
@@ -299,7 +299,7 @@ test('invalid default types normalize safely and failed saves retain session def
         git: false,
         mode: 'upsert',
         backupBeforeImport: true,
-        skipEmptyLines: false,
+        skipEmptyLines: true,
         debug: false,
     });
     store._writeFile = async () => {
@@ -407,6 +407,49 @@ test('an unrelated overlapping save cannot persist an unsaved affirmative candid
     await restarted.init();
     assert.equal(restarted.getConsent(), undefined);
     assert.equal(JSON.parse(await fs.readFile(filePath, 'utf8')).telemetryFirstConsentedRun, false);
+});
+
+test('empty-record migration resets only the legacy preference once, preserving later opt-outs', async () => {
+    const filePath = await temporarySettingsPath();
+    await fs.writeFile(
+        filePath,
+        JSON.stringify({
+            clientId: 'existing',
+            projectRoot: 'F:/project',
+            telemetryConsent: false,
+            transferDefaults: {
+                format: 'tsv',
+                git: true,
+                mode: 'insert',
+                backupBeforeImport: false,
+                skipEmptyLines: false,
+                debug: true,
+            },
+        }),
+    );
+    const store = new SettingsStore({ filePath, currentVersion: '1.0.0' });
+    await store.init();
+    const expected = {
+        format: 'tsv',
+        git: true,
+        mode: 'insert',
+        backupBeforeImport: false,
+        skipEmptyLines: true,
+        debug: true,
+    };
+    assert.deepEqual(store.getState().transferDefaults, expected);
+    assert.equal(store.getProjectRoot(), 'F:/project');
+    assert.equal(store.getConsent(), false);
+    assert.equal(JSON.parse(await fs.readFile(filePath, 'utf8')).emptyRecordsMigrationVersion, 1);
+    await store.setTransferDefaults({ ...expected, skipEmptyLines: false });
+    for (const currentVersion of ['1.0.0', '2.0.0']) {
+        const restarted = new SettingsStore({ filePath, currentVersion });
+        await restarted.init();
+        assert.deepEqual(restarted.getState().transferDefaults, {
+            ...expected,
+            skipEmptyLines: false,
+        });
+    }
 });
 
 test('a corrupt settings file is tolerated as a fresh install', async () => {

@@ -490,6 +490,7 @@ test('router retains mounted runners and stable subscriptions over repeated and 
     context.mcdata.getAppInfo = async () => ({ appVersion: 'test' });
     context.McUpdates = { init() {} };
     context.McSettings = { initConsentGate() {} };
+    context.McChangelog = { init() {} };
     context.McScreens = {};
     for (const tab of tabs) {
         const name = tab.dataset.view;
@@ -568,6 +569,7 @@ test('real runner controls and job subscriptions survive navigation until termin
     context.mcdata.getAppInfo = async () => ({});
     context.McUpdates = { init() {} };
     context.McSettings = { initConsentGate() {} };
+    context.McChangelog = { init() {} };
     context.McScreens = {
         connections: { mount() {} },
         export: {
@@ -1107,6 +1109,7 @@ test('global active job returns to its cached screen, focuses the runner and sur
     context.mcdata.getAppInfo = async () => ({});
     context.McUpdates = { init() {} };
     context.McSettings = { initConsentGate() {} };
+    context.McChangelog = { init() {} };
     context.McScreens = Object.fromEntries(tabs.map((tab) => [tab.dataset.view, { mount() {} }]));
     context.McScreens.import.mount = (host) => {
         mounts++;
@@ -1203,6 +1206,7 @@ test('all cached screen starts follow active jobs throughout navigation', async 
     context.mcdata.getAppInfo = async () => ({});
     context.McUpdates = { init() {} };
     context.McSettings = { initConsentGate() {} };
+    context.McChangelog = { init() {} };
     load('forms.js');
     load('job-runner.js');
     for (const screen of ['connections', 'export', 'import']) {

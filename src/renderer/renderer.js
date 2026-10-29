@@ -152,6 +152,7 @@
         await restoreProjectRoot();
         activate('connections');
         // First-run telemetry consent prompt (no-op once the user has chosen).
-        globalObject.McSettings.initConsentGate();
+        await globalObject.McSettings.initConsentGate();
+        void globalObject.McChangelog.init();
     });
 })(globalThis);

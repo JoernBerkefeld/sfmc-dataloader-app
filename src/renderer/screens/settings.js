@@ -149,7 +149,7 @@
         );
         const git = checkbox('Stable export filenames (--git)', false);
         const backup = checkbox('Backup before import', true);
-        const skip = checkbox('Skip empty lines (CSV/TSV)', false);
+        const skip = checkbox('Skip empty lines (CSV/TSV)', true);
         const debug = checkbox('Enable debug logs', false);
         const defaultsStatus = element('p', { attrs: { role: 'status' } });
         const saveDefaults = button('Save transfer defaults');
@@ -164,7 +164,7 @@
                 text: 'Debug logs may contain sensitive API data. Share them carefully.',
             }),
             element('p', {
-                text: 'Transfer screens allow per-run overrides. Clear is never saved as a default.',
+                text: 'Transfer screens allow per-run overrides. Clear is never saved as a default. Skip empty lines includes blank, delimiter-only and quoted-empty records; automatic file-edge cleanup is independent.',
             }),
             defaultsStatus,
             saveDefaults,

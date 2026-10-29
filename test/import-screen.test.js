@@ -203,7 +203,7 @@ test('imports without file paths do not show the size advisory', async () => {
     assert.equal(screen.alerts.length, 0);
 });
 
-test('import checkbox defaults off and routes checked state across import modes', async () => {
+test('import checkbox defaults on and routes checked state across import modes', async () => {
     const selects = [];
     const checks = [];
     const jobs = [];
@@ -289,10 +289,12 @@ test('import checkbox defaults off and routes checked state across import modes'
     context.McScreens.import.mount(element('container'));
     const checkbox = checks.find((check) => check.label === 'Skip empty lines (CSV/TSV)');
     assert.ok(checkbox);
-    assert.equal(checkbox.input.checked, false);
+    assert.equal(checkbox.input.checked, true);
+    checkbox.input.checked = false;
     await runButton.listeners.click();
     assert.equal(jobs.at(-1).skipEmptyLines, false);
     assert.equal(buildMcdataArgv(jobs.at(-1)).includes('--skip-empty-lines'), false);
+    assert.equal(buildMcdataArgv(jobs.at(-1)).includes('--no-skip-empty-lines'), true);
     checkbox.input.checked = true;
     for (const mode of ['singleDe', 'singleFile', 'crossFile', 'crossApi', 'singleDe']) {
         selects[0].value = mode;
