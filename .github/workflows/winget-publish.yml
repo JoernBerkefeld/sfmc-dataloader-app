@@ -1,9 +1,17 @@
 name: Submit to winget
 
-# Called only after the installer build/upload matrix succeeds. Submission is
+# Called after successful installer uploads, or manually for an existing release.
+# Manual dispatch runs only this workflow, never the installer build matrix.
+# Submission is
 # optional: WINGET_TOKEN is a classic PAT with `public_repo` that can fork
 # microsoft/winget-pkgs. A missing token skips successfully; real failures fail.
 on:
+    workflow_dispatch:
+        inputs:
+            release-tag:
+                description: Existing stable release tag (for example v0.8.1)
+                required: true
+                type: string
     workflow_call:
         inputs:
             release-tag:
@@ -13,14 +21,29 @@ on:
             WINGET_TOKEN:
                 required: false
 
+permissions:
+    contents: read
+
 jobs:
     winget:
         runs-on: windows-latest
         # Skip pre-releases and skip entirely when no token is configured.
         if: ${{ !github.event.release.prerelease }}
         steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.sha }}
+            - uses: actions/checkout@v4
+              with:
+                  ref: ${{ inputs.release-tag }}
+                  path: release-source
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: package.json
+            - run: npm ci --no-workspaces
             - name: Submit new version to winget-pkgs
               env:
+                  GH_TOKEN: ${{ github.token }}
                   WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
                   RELEASE_TAG: ${{ inputs.release-tag }}
               run: |
@@ -29,16 +52,31 @@ jobs:
                       Write-Host 'WINGET_TOKEN not set — skipping winget submission.'
                       exit 0
                   }
+                  if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
+                      throw 'Expected a stable vX.Y.Z release tag.'
+                  }
+                  $releaseJson = gh release view $env:RELEASE_TAG --repo JoernBerkefeld/sfmc-dataloader-app --json isDraft,isPrerelease
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+                  $release = $releaseJson | ConvertFrom-Json
+                  if ($release.isDraft -ne $false -or $release.isPrerelease -ne $false) {
+                      throw 'Only an existing published stable release may be submitted.'
+                  }
                   $version = $env:RELEASE_TAG.TrimStart('v')
                   $installerUrl = "https://github.com/JoernBerkefeld/sfmc-dataloader-app/releases/download/$env:RELEASE_TAG/sfmc-dataloader-app-$version-win-x64.exe"
                   # Fail before submission if the expected published installer is missing.
                   Invoke-WebRequest -Uri $installerUrl -Method Head
-                  # wingetcreate downloads the installer, computes the SHA256 and
-                  # opens a PR against microsoft/winget-pkgs from the existing manifest.
+                  # update clears ReleaseNotes; enrich its saved output before submit.
                   Invoke-WebRequest -Uri 'https://aka.ms/wingetcreate/latest' -OutFile wingetcreate.exe
+                  $output = node -e "require('./test/fixtures/temporary-preflight').assertTemporaryEnvironment(); console.log(require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'winget-')))"
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
                   .\wingetcreate.exe update JoernBerkefeld.SFMCDataLoader `
                       --version $version `
                       --urls $installerUrl `
-                      --submit `
+                      --out $output `
                       --token $env:WINGET_TOKEN
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+                  $manifestDirectory = Join-Path $output "manifests/j/JoernBerkefeld/SFMCDataLoader/$version"
+                  node scripts/winget-release-notes.mjs $manifestDirectory $version release-source/CHANGELOG.md
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+                  .\wingetcreate.exe submit $manifestDirectory --token $env:WINGET_TOKEN
                   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

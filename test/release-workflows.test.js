@@ -21,14 +21,20 @@ const wingetWorkflow = fs.readFileSync(
     'utf8',
 );
 
-test('winget has only a reusable trigger with an explicit tag and optional token', () => {
+test('winget has reusable and WinGet-only manual triggers with an explicit tag', () => {
     assert.match(
         wingetWorkflow,
-        /on:\n {4}workflow_call:\n {8}inputs:\n {12}release-tag:\n {16}required: true\n {16}type: string\n {8}secrets:\n {12}WINGET_TOKEN:\n {16}required: false\n/,
+        / {4}workflow_call:\n {8}inputs:\n {12}release-tag:\n {16}required: true\n {16}type: string\n {8}secrets:\n {12}WINGET_TOKEN:\n {16}required: false\n/,
     );
-    assert.doesNotMatch(wingetWorkflow, /^ {4}(?:release|workflow_dispatch|workflow_run):/m);
+    assert.match(wingetWorkflow, /workflow_dispatch:\n {8}inputs:\n {12}release-tag:/);
+    assert.doesNotMatch(wingetWorkflow, /^ {4}(?:release|workflow_run):/m);
+    assert.doesNotMatch(
+        wingetWorkflow,
+        /electron-builder|build-release\.yml|update-packaging-manifests/,
+    );
     assert.doesNotMatch(wingetWorkflow, /github\.event\.release\.tag_name/);
-    assert.equal((wingetWorkflow.match(/--submit/g) ?? []).length, 1);
+    assert.doesNotMatch(wingetWorkflow, /--submit/);
+    assert.equal((wingetWorkflow.match(/wingetcreate\.exe submit/g) ?? []).length, 1);
 });
 
 test('winget caller waits for the complete successful installer matrix', () => {
@@ -93,6 +99,50 @@ test('winget propagates download, asset-check and native submission failures', (
     );
     assert.doesNotMatch(wingetWorkflow, /continue-on-error:|\|\|\s*true|catch\s*\{/);
     assert.equal((wingetWorkflow.match(/exit 0/g) ?? []).length, 1);
+});
+
+test('winget enriches release-bound generated manifests before submitting that same directory', () => {
+    assert.match(wingetWorkflow, /ref: \$\{\{ github\.sha \}\}/);
+    assert.match(wingetWorkflow, /ref: \$\{\{ inputs\.release-tag \}\}\n {18}path: release-source/);
+    assert.match(wingetWorkflow, /node-version-file: package.json/);
+    assert.match(wingetWorkflow, /npm ci --no-workspaces/);
+    assert.match(wingetWorkflow, /--out \$output/);
+    assert.ok(wingetWorkflow.includes('manifests/j/JoernBerkefeld/SFMCDataLoader/$version'));
+    const generate = wingetWorkflow.indexOf('wingetcreate.exe update');
+    const enrich = wingetWorkflow.indexOf(
+        'node scripts/winget-release-notes.mjs $manifestDirectory $version release-source/CHANGELOG.md',
+    );
+    const submit = wingetWorkflow.indexOf('wingetcreate.exe submit $manifestDirectory');
+    assert.ok(generate < enrich && enrich < submit);
+    assert.match(
+        wingetWorkflow.slice(enrich, submit),
+        /if \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}/,
+    );
+});
+
+test('manual winget retry authenticates and fails closed for unavailable or unstable releases', () => {
+    assert.match(wingetWorkflow, /permissions:\n {4}contents: read/);
+    assert.match(wingetWorkflow, /GH_TOKEN: \$\{\{ github\.token \}\}/);
+    assert.match(
+        wingetWorkflow,
+        /gh release view .*--repo JoernBerkefeld\/sfmc-dataloader-app --json isDraft,isPrerelease\n[^\n]*if \(\$LASTEXITCODE -ne 0\)/,
+    );
+    assert.ok(
+        wingetWorkflow.includes('$release.isDraft -ne $false -or $release.isPrerelease -ne $false'),
+    );
+    assert.ok(
+        wingetWorkflow.indexOf('gh release view') <
+            wingetWorkflow.indexOf('wingetcreate.exe update'),
+    );
+});
+
+test('manifest refresh installs its YAML dependency before running the packaging script', () => {
+    const refreshJob = releaseWorkflow.split('    update-manifests:', 2)[1];
+    assert.ok(refreshJob, 'manifest refresh job must exist');
+    const setup = refreshJob.indexOf('uses: actions/setup-node@');
+    const install = refreshJob.indexOf('run: npm ci --no-workspaces');
+    const refresh = refreshJob.indexOf('run: node scripts/update-packaging-manifests.mjs');
+    assert.ok(setup !== -1 && install > setup && refresh > install);
 });
 
 test('Linux CI initializes Electron and configures its sandbox before Xvfb tests', () => {

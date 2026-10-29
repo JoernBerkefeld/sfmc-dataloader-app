@@ -23,6 +23,7 @@ import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { enrichLocale, releaseNotes } from './winget-release-notes.mjs';
 
 const REPO = 'JoernBerkefeld/sfmc-dataloader-app';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -99,6 +100,8 @@ function assetUrl(version, filename) {
 
 async function main() {
     const version = resolveVersion();
+    const changelog = await readFile(path.join(ROOT, 'CHANGELOG.md'), 'utf8');
+    releaseNotes(changelog, version);
 
     const assets = {
         win: `sfmc-dataloader-app-${version}-win-x64.exe`,
@@ -192,8 +195,8 @@ async function main() {
     ];
     for (const file of wingetFiles) {
         if (
-            await editFile(path.join(PKG, 'winget', file), (c) =>
-                c
+            await editFile(path.join(PKG, 'winget', file), (c) => {
+                const updated = c
                     .replace(/(PackageVersion:\s*)[\d.]+/, (_m, p1) => `${p1}${version}`)
                     .replaceAll(
                         /sfmc-dataloader-app\/releases\/download\/v[\d.]+\/sfmc-dataloader-app-[\d.]+-win-x64\.exe/g,
@@ -202,8 +205,11 @@ async function main() {
                     .replace(
                         /(InstallerSha256:\s*)[0-9a-fA-F]*/,
                         (_m, p1) => `${p1}${wingetUpper}`,
-                    ),
-            )
+                    );
+                return file.endsWith('.locale.en-US.yaml')
+                    ? enrichLocale(updated, changelog, version)
+                    : updated;
+            })
         ) {
             changed.push(`packaging/winget/${file}`);
         }

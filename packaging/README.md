@@ -46,7 +46,26 @@ After that, `build-release.yml` calls the reusable
 `.github/workflows/winget-publish.yml` for stable releases only, after the full
 installer build/upload matrix succeeds. A missing `WINGET_TOKEN` secret (a PAT
 that can fork winget-pkgs) skips submission successfully. With the token present,
-`wingetcreate` submits the release; an actual submission error fails the workflow.
+`wingetcreate update` generates the release manifests locally, then
+`scripts/winget-release-notes.mjs` fills the en-US default locale's `ReleaseNotes`
+from that exact version's bundled `CHANGELOG.md` section. `ReleaseNotesUrl` is a
+separate link to the matching GitHub release, not a substitute for the notes.
+Only then does `wingetcreate submit` submit that same directory. Submission tooling
+comes from the workflow commit; a separate checkout binds `CHANGELOG.md` to the
+requested release tag. Missing/empty notes, invalid YAML or a mismatched
+locale/version stop submission. An actual submission error fails the workflow.
+
+To retry **only WinGet** for an already published stable release using current
+submission tooling (no installer rebuild, release republication or tag changes),
+first check for an existing open PR for that version in `microsoft/winget-pkgs`.
+If one exists, stop rather than creating a duplicate. Otherwise run:
+
+```bash
+gh workflow run winget-publish.yml --repo JoernBerkefeld/sfmc-dataloader-app --ref main -f release-tag=v0.8.1
+```
+
+The workflow rejects drafts/prereleases and uses the existing versioned installer
+URL; `wingetcreate` downloads that unchanged installer to compute its SHA256.
 Then:
 
 ```powershell
@@ -100,7 +119,9 @@ npm run update-manifests -- --version 1.2.3
 ```
 
 The script is idempotent — it only rewrites files whose content actually
-changed.
+changed. It also refreshes the winget seed's `ReleaseNotes` and `ReleaseNotesUrl`
+using the same helper, after updating its version. These seeds are not the
+manifests submitted by the separate winget workflow.
 
 ## Per-release maintenance checklist
 

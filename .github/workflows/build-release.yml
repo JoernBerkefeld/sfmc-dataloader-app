@@ -129,6 +129,8 @@ jobs:
               with:
                   node-version: '24'
 
+            - run: npm ci --no-workspaces
+
             # Recompute every manifest's version/url/sha256 from the release assets
             # produced by the build job above.
             - name: Refresh packaging manifests
