@@ -9,6 +9,7 @@ const { createRequire, registerHooks } = require('node:module');
 const { pathToFileURL } = require('node:url');
 const { loadConfig } = require('../src/main/config-service');
 const { createJobRunner } = require('../src/shared/run-mcdata-job');
+const { buildMcdataArgv } = require('../src/shared/build-argv');
 
 // This file owns its fixtures; no live org credentials, writes, or network calls.
 // Retain the small run directory instead of recursively deleting an unregistered tree.
@@ -108,7 +109,13 @@ test('adopted package-root public API lists connections without reading auth', a
         `loader ${identity.version}; entry ${entry}; public API ${typeof dl.loadPublicProjectConfig}`,
     );
     if (!process.env.SFMC_DATALOADER_FIXTURE) {
-        assert.equal(require('../package.json').dependencies['sfmc-dataloader'], '^4.0.0');
+        assert.equal(require('../package.json').dependencies['sfmc-dataloader'], '^4.1.0');
+        assert.equal(identity.version, '4.1.0');
+        assert.equal(
+            require('../package-lock.json').packages['node_modules/@joern.berkefeld/csv-parser']
+                .version,
+            '5.0.0',
+        );
     }
     assert.equal(typeof dl.loadPublicProjectConfig, 'function');
     const configOptions = process.env.SFMC_DATALOADER_FIXTURE
@@ -206,6 +213,116 @@ test('released completion outcomes stay nonzero through the app worker boundary'
         }
     }
     assert.equal(uploads, 6);
+});
+
+test('updated loader imports plain TSV and JSON through the app worker', async (t) => {
+    const uploads = [];
+    // eslint-disable-next-line unicorn/no-global-object-property-assignment -- Test-only SDK injection consumed by the module hook.
+    globalThis.__appIntegrationSdk = {
+        rest: {
+            get: async () => ({ status: { requestStatus: 'Complete' } }),
+            put: async (route, body) => {
+                uploads.push({ route, body });
+                return { requestId: 'synthetic-request' };
+            },
+        },
+    };
+    t.after(() => {
+        delete globalThis.__appIntegrationSdk;
+    });
+    t.mock.method(globalThis, 'setTimeout', (callback) => queueMicrotask(callback));
+    for (const [extension, contents] of [
+        ['TSV', 'id\tvalue\n1\tone\n'],
+        ['JSON', '[{"id":"1","value":"one"}]'],
+    ]) {
+        const file = path.join(root, `Customer.List.part1.${extension}`);
+        fs.writeFileSync(file, contents);
+        const messages = [];
+        await createJobRunner({
+            post: (message) => {
+                messages.push(message);
+            },
+            buildArgv: buildMcdataArgv,
+            importDataloader: () => loader,
+            console,
+        })({
+            kind: 'import',
+            source: 'C/B',
+            projectRoot: root,
+            filePaths: [file],
+            backupBeforeImport: false,
+        });
+        assert.deepEqual(messages.at(-1), { type: 'complete', exitCode: 0 }, extension);
+        const upload = uploads.at(-1);
+        assert.equal(uploads.length, extension === 'TSV' ? 1 : 2);
+        assert.ok(upload.route.includes('Customer.List.part1'));
+        assert.deepEqual(upload.body.items, [{ id: '1', value: 'one' }]);
+    }
+});
+
+test('inherited row validation rejects before backup, CLEAR or upload through app argv', async (t) => {
+    let sdkEffects = 0;
+    // eslint-disable-next-line unicorn/no-global-object-property-assignment -- Test-only SDK injection records any premature side effect.
+    globalThis.__appIntegrationSdk = new Proxy(
+        {},
+        {
+            get() {
+                sdkEffects++;
+                assert.fail('SDK used before invalid row rejected');
+            },
+        },
+    );
+    t.after(() => {
+        delete globalThis.__appIntegrationSdk;
+    });
+    const value = 'é'.repeat(2_749_990);
+    const row = { value };
+    assert.ok(Buffer.byteLength(JSON.stringify(row), 'utf8') <= 5_500_000);
+    assert.ok(Buffer.byteLength(JSON.stringify({ items: [row] }), 'utf8') > 5_500_000);
+    const cases = [];
+    // eslint-disable-next-line unicorn/no-null -- JSON null is an explicit invalid-row regression input.
+    for (const invalid of [null, [], 'text', 42, true]) {
+        for (const envelope of [false, true]) {
+            const rows = [{ id: 'valid-first' }, invalid];
+            cases.push([
+                'json',
+                JSON.stringify(envelope ? { items: rows } : rows),
+                /JSON import rows must be non-null objects, not arrays/,
+            ]);
+        }
+    }
+    for (const extension of ['csv', 'tsv', 'json']) {
+        cases.push([
+            extension,
+            extension === 'json' ? JSON.stringify({ items: [row] }) : `value\n${value}\n`,
+            /Import row exceeds the 5500000-byte request body limit/,
+        ]);
+    }
+    for (const [extension, contents, expected] of cases) {
+        const file = path.join(root, `Invalid.Customer.part1.${extension}`);
+        fs.writeFileSync(file, contents);
+        const messages = [];
+        await createJobRunner({
+            post: (message) => {
+                messages.push(message);
+            },
+            buildArgv: buildMcdataArgv,
+            importDataloader: () => loader,
+            console,
+        })({
+            kind: 'import',
+            source: 'C/B',
+            projectRoot: root,
+            filePaths: [file],
+            backupBeforeImport: true,
+            clearBeforeImport: true,
+        });
+        assert.deepEqual(messages.at(-1), { type: 'complete', exitCode: 1 });
+        assert.equal(messages.filter((message) => message.type === 'complete').length, 1);
+        assert.match(JSON.stringify(messages), expected);
+        assert.equal(JSON.stringify(messages).includes(secret), false);
+        assert.equal(sdkEffects, 0, 'preflight must precede every SDK operation');
+    }
 });
 
 test('ambiguous explicit files reject once before any SDK effect or automatic retry', async (t) => {

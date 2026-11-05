@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.0] — 2026-11-05
+
+Adopts [sfmc-dataloader 4.1.0](https://github.com/JoernBerkefeld/sfmc-dataloader/releases/tag/v4.1.0), replacing loader 4.0.0 resolved by app 0.8.1's tagged lockfile. Parser 5.0.0 is unchanged. There are no intermediate loader releases in this interval. The loader runs in-process in the app worker; no external CLI is used.
+### Added
+
+- Browse imports now accept plain `.tsv` and `.json` filenames as well as `.csv`, including uppercase extensions. Only the final extension is removed: dots, percent escapes and `partN` remain literal DE-key text. Existing `.mcdata` filenames retain legacy decoding and multipart/timestamp precedence; keys colliding with that reserved convention must be changed. Directory discovery still requires exported `.mcdata` names, and export naming is unchanged.
+
+### Fixed
+
+- Invalid filename and ambiguous-selection errors identify unsupported names, duplicate unnumbered files and mixed runs/formats for one DE; these selections fail before side effects.
+- JSON imports accept a row array or an `items` array, but every row must be a non-null object, not an array or primitive. Invalid later rows fail before backup, CLEAR or upload.
+- File-import validation rejects a row whose single-row JSON `items` request envelope exceeds 5,500,000 UTF-8 bytes, including CSV/TSV rows after parsing. Cross-BU API imports also validate downloaded source snapshots before target effects. Existing row-count batching and CSV/TSV cleanup defaults remain unchanged; no opt-out bypasses row validation. JSON files are still parsed in full, so memory use depends on the largest part. Keep sources unchanged through import: preflight is not a file lock, transaction or rollback.
+
+See the [complete loader 4.0.0–4.1.0 changes](https://github.com/JoernBerkefeld/sfmc-dataloader/compare/v4.0.0...v4.1.0) for optional upstream detail.
+
 ## [0.8.1] — 2026-10-29
 
 ### Fixed

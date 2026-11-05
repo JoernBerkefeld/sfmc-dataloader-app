@@ -126,7 +126,9 @@ JSON imports, API copies and exports are unaffected.
 
 **Browse** also accepts `Customer.List.csv` for
 literal DE key `Customer.List`, `Customers.part1.csv` for literal key
-`Customers.part1`, and uppercase `.CSV`. Plain TSV/JSON names are not added.
+`Customers.part1`, and uppercase extensions. App 0.9.0 also accepts plain `.tsv`
+and `.json` names with these literal-key rules; percent escapes are not decoded.
+This uses loader 4.1.0, replacing loader 4.0.0 from app 0.8.1.
 Existing `.mcdata` filenames keep their legacy interpretation, including multipart
 and timestamp conventions. Keys colliding with that reserved convention must be
 changed. Selecting plain and legacy files for the same key is ambiguous and is
@@ -146,6 +148,15 @@ data fail before backup, clear or upload. Cleanup counts are reported once per
 logical source set, separating removed columns/trailing records from optional skips;
 counts, snapshots and uploads reuse the same validated policy. Keep selected files
 unchanged through import: preflight is not a file lock, transaction or rollback.
+
+App 0.9.0's loader 4.1.0 also rejects JSON rows that are null,
+arrays or primitives: input must be a row array or an `items` array of non-null
+objects. Every file-import row, including parsed CSV/TSV, must fit within a
+5,500,000-byte UTF-8 JSON request body including its single-row `items` envelope.
+Invalid inputs fail before backup, CLEAR or upload; cross-BU API imports validate
+downloaded snapshots before target effects too. There is no validation opt-out.
+JSON files are still parsed in full, with memory use depending on the largest part.
+See the [changelog](CHANGELOG.md) for the complete inherited changes.
 
 > **Note on macOS:** until code-signing certificates are configured, macOS builds are **unsigned**. You may need to right-click the app and choose _Open_ the first time to get past Gatekeeper.
 
@@ -243,7 +254,10 @@ argv.
 ### Development
 
 Use Node.js `^22.22.2 || >=24.15.0` for development. The app bundles
-`sfmc-dataloader` `^4.0.0` (lockfile version 4.0.0, parser 5.0.0); installed desktop apps need no separate Node.js install.
+`sfmc-dataloader` `^4.1.0` (lockfile version 4.1.0, parser 5.0.0) in app
+0.9.0; app 0.8.1 resolved loader 4.0.0/parser 5.0.0.
+There are no intermediate loader releases, and the parser is unchanged. Installed
+desktop apps need no separate Node.js install.
 The loader preserves unsuccessful/unverified import outcomes and rejects
 ambiguous explicit file selections rather than retrying or dropping files.
 
